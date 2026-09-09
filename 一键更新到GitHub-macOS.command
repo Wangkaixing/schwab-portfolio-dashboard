@@ -31,6 +31,14 @@ if ! gh auth status >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! git -C "$PUBLIC_DIR" diff --quiet || ! git -C "$PUBLIC_DIR" diff --cached --quiet; then
+  echo "公开仓库副本存在未提交修改，已停止更新，请先处理这些修改。"
+  exit 1
+fi
+
+echo "正在获取 GitHub 上的最新版本..."
+git -C "$PUBLIC_DIR" pull --rebase origin main
+
 echo "正在同步公开源代码..."
 rsync -a --delete \
   --exclude='.git' \
