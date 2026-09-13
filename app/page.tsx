@@ -2,40 +2,55 @@
 
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AreaChart,
-  ArrowDownToLine,
-  ArrowUpFromLine,
+  ChevronLeft,
+  ChevronRight,
+  CalendarDays,
   ChevronsUpDown,
-  CircleDollarSign,
   Download,
   Eye,
   EyeOff,
   FileJson,
+  MoreHorizontal,
   Moon,
+  Plus,
   RefreshCcw,
-  Search,
+  Settings2,
   Sun,
   Trash2,
   Upload,
-  WalletCards,
+  Undo2,
   X,
 } from 'lucide-react';
 import {
   Bar,
   BarChart,
-  CartesianGrid,
   Cell,
-  ComposedChart,
   Line,
+  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
+  ReferenceLine,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from '@/components/ui/native-select';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,9 +60,14 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Input } from '@/components/ui/input';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   Pagination,
   PaginationContent,
@@ -56,13 +76,6 @@ import {
   PaginationPrevious,
 } from '@/components/ui/pagination';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -70,6 +83,11 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Switch } from '@/components/ui/switch';
+import {
+  classifyIndustry,
+  THEME_COLORS,
+  type IndustryTheme,
+} from '@/lib/industry-themes';
 import {
   Table,
   TableBody,
@@ -102,67 +120,139 @@ type RememberedImport = {
   fileName: string;
   importedAt: string;
 };
+type MarketQuote = {
+  current: number;
+  change: number;
+  changePercent: number;
+  previousClose: number;
+  timestamp: number;
+};
+type CandleSeries = { closes: number[]; timestamps: number[] };
+type PairPoint = {
+  date: string;
+  value: number;
+  signal: 'up' | 'down' | null;
+};
+type PairIndicator = {
+  symbol: string;
+  value: number;
+  armUp: boolean;
+  armDown: boolean;
+  lastSignal: 'up' | 'down' | null;
+  lastSignalDate: string;
+  points: PairPoint[];
+};
 type SortKey = keyof Transaction;
 type SortDirection = 'asc' | 'desc';
-type IndustryTheme =
-  | '大型科技'
-  | '半导体产业链'
-  | '存储与内存'
-  | '红利与价值'
-  | '金融服务'
-  | '工业制造'
-  | '医疗健康'
-  | '数字资产'
-  | '现金管理'
-  | '多元配置'
-  | '其他';
-
-const COLORS = {
-  buy: '#0066cc',
-  sell: '#15966b',
-  transfer: '#6c63d9',
-  fee: '#d17b21',
+type ManualTransaction = {
+  date: string;
+  action: string;
+  symbol: string;
+  description: string;
+  quantity: string;
+  price: string;
+  fees: string;
+  amount: string;
+};
+type DcaPlan = {
+  symbol: string;
+  secondarySymbol?: string;
+  enabled?: boolean;
+  monthlyTarget: number;
+  priority: 'primary' | 'secondary';
+};
+type DcaPlanExport = {
+  format: 'schwab-dashboard-dca-plan';
+  version: 1;
+  exportedAt: string;
+  plans: DcaPlan[];
+};
+const DEFAULT_DCA_PLANS: DcaPlan[] = [
+  { symbol: 'QLD', monthlyTarget: 2666, priority: 'primary' },
+  { symbol: 'IBIT', monthlyTarget: 888, priority: 'primary' },
+  {
+    symbol: 'CGDV',
+    secondarySymbol: 'SCHD',
+    monthlyTarget: 888,
+    priority: 'secondary',
+  },
+];
+const EMPTY_MANUAL_TRANSACTION: ManualTransaction = {
+  date: '',
+  action: 'Buy',
+  symbol: '',
+  description: '',
+  quantity: '',
+  price: '',
+  fees: '0',
+  amount: '',
 };
 const ACTION_LABELS: Record<string, string> = {
   Buy: '买入',
   Sell: '卖出',
+  'Cash Dividend': '分红',
+  Interest: '利息',
   'Wire Received': '汇款到账',
   'MoneyLink Transfer': '转账到账',
-};
-const SYMBOL_THEMES: Record<string, IndustryTheme> = {
-  QLD: '大型科技',
-  SOXL: '半导体产业链',
-  SMH: '半导体产业链',
-  TSM: '半导体产业链',
-  SKUU: '存储与内存',
-  RAM: '存储与内存',
-  SCHD: '红利与价值',
-  IBIT: '数字资产',
-  SGOV: '现金管理',
-};
-const THEME_COLORS: Record<IndustryTheme, string> = {
-  大型科技: '#0066cc',
-  半导体产业链: '#159ba6',
-  存储与内存: '#6c63d9',
-  红利与价值: '#15966b',
-  金融服务: '#4c7a91',
-  工业制造: '#d17b21',
-  医疗健康: '#c94c67',
-  数字资产: '#e05a33',
-  现金管理: '#b88b16',
-  多元配置: '#71869b',
-  其他: '#8a97a5',
+  Other: '其他',
 };
 const PAGE_SIZE = 8;
 const LAST_IMPORT_KEY = 'schwab-dashboard:last-json-import';
+const LAST_QUOTES_KEY = 'schwab-dashboard:last-market-quotes';
+const UNDO_TRANSACTION_KEY = 'schwab-dashboard:transaction-undo';
+const PAIR_INDICATORS_KEY = 'schwab-dashboard:bo-pair-indicators:v2';
+const PAIR_SYMBOLS = ['CGDV', 'VTV', 'SCHD', 'KO'] as const;
+const PAIR_LENGTH = 35;
+const PAIR_ARM_THRESHOLD = 1;
+const DCA_PLANS_KEY = 'schwab-dashboard:dca-plans:v4';
 
 function isSchwabExport(value: unknown): value is SchwabExport {
   const candidate = value as Partial<SchwabExport> | null;
   return Boolean(
     candidate?.FromDate &&
-      candidate?.ToDate &&
-      Array.isArray(candidate?.BrokerageTransactions),
+    candidate?.ToDate &&
+    Array.isArray(candidate?.BrokerageTransactions),
   );
+}
+function isDcaPlanExport(value: unknown): value is DcaPlanExport {
+  const candidate = value as Partial<DcaPlanExport> | null;
+  return Boolean(
+    candidate?.format === 'schwab-dashboard-dca-plan' &&
+    candidate?.version === 1 &&
+    Array.isArray(candidate?.plans) &&
+    candidate.plans.length === DEFAULT_DCA_PLANS.length &&
+    candidate.plans.every(
+      (plan) =>
+        plan &&
+        typeof plan.symbol === 'string' &&
+        (plan.secondarySymbol === undefined ||
+          typeof plan.secondarySymbol === 'string') &&
+        Number.isFinite(Number(plan.monthlyTarget)),
+    ),
+  );
+}
+function normalizeDcaPlans(plans: DcaPlan[]): DcaPlan[] {
+  return DEFAULT_DCA_PLANS.map((fallback, index) => {
+    const plan = plans[index] ?? fallback;
+    const legacyDefensive = plan.symbol === 'DEFENSIVE';
+    return {
+      symbol: (legacyDefensive ? 'CGDV' : (plan.symbol ?? fallback.symbol))
+        .trim()
+        .toUpperCase(),
+      secondarySymbol:
+        index === 2
+          ? (legacyDefensive
+              ? 'SCHD'
+              : (plan.secondarySymbol ?? fallback.secondarySymbol ?? '')
+            )
+              .trim()
+              .toUpperCase()
+          : undefined,
+      enabled: plan.enabled !== false,
+      monthlyTarget: Math.max(0, Number(plan.monthlyTarget) || 0),
+      priority: index === 2 ? 'secondary' : 'primary',
+    };
+  });
 }
 
 function rememberImport(
@@ -186,22 +276,124 @@ function numberFrom(value = '') {
   const parsed = Number(value.replace(/[$,()\-]/g, '')) || 0;
   return negative ? -parsed : parsed;
 }
+function calculatePairIndicator(
+  symbol: string,
+  source: CandleSeries,
+  benchmark: CandleSeries,
+): PairIndicator | null {
+  const benchmarkByTime = new Map(
+    benchmark.timestamps.map((timestamp, index) => [
+      timestamp,
+      benchmark.closes[index],
+    ]),
+  );
+  const ratios = source.timestamps
+    .map((timestamp, index) => {
+      const benchmarkClose = benchmarkByTime.get(timestamp);
+      const sourceClose = source.closes[index];
+      return benchmarkClose && sourceClose
+        ? { timestamp, ratio: sourceClose / benchmarkClose }
+        : null;
+    })
+    .filter((item): item is { timestamp: number; ratio: number } =>
+      Boolean(item),
+    )
+    .sort((a, b) => a.timestamp - b.timestamp);
+  if (ratios.length <= PAIR_LENGTH) return null;
+
+  let armUp = false;
+  let armDown = false;
+  let lastSignal: 'up' | 'down' | null = null;
+  let lastSignalDate = '';
+  const points: PairPoint[] = [];
+  let previous: number | null = null;
+  for (let index = PAIR_LENGTH; index < ratios.length; index += 1) {
+    const base = ratios[index - PAIR_LENGTH].ratio;
+    const value = ((ratios[index].ratio - base) / base) * 100;
+    if (value <= -PAIR_ARM_THRESHOLD) armUp = true;
+    if (value >= PAIR_ARM_THRESHOLD) armDown = true;
+    const crossedUp = previous !== null && previous <= 0 && value > 0;
+    const crossedDown = previous !== null && previous >= 0 && value < 0;
+    let pointSignal: 'up' | 'down' | null = null;
+    if (crossedUp && armUp) {
+      lastSignal = 'up';
+      pointSignal = 'up';
+      lastSignalDate = new Date(ratios[index].timestamp * 1000)
+        .toISOString()
+        .slice(0, 10);
+      armUp = false;
+    }
+    if (crossedDown && armDown) {
+      lastSignal = 'down';
+      pointSignal = 'down';
+      lastSignalDate = new Date(ratios[index].timestamp * 1000)
+        .toISOString()
+        .slice(0, 10);
+      armDown = false;
+    }
+    points.push({
+      date: new Date(ratios[index].timestamp * 1000).toISOString().slice(0, 10),
+      value,
+      signal: pointSignal,
+    });
+    previous = value;
+  }
+  const latest = points.at(-1);
+  return latest
+    ? {
+        symbol,
+        value: latest.value,
+        armUp,
+        armDown,
+        lastSignal,
+        lastSignalDate,
+        points: points.slice(-70),
+      }
+    : null;
+}
+
+function PairSignalDot({
+  cx,
+  cy,
+  payload,
+}: {
+  cx?: number;
+  cy?: number;
+  payload?: PairPoint;
+}) {
+  if (cx === undefined || cy === undefined || !payload?.signal) return null;
+  return (
+    <circle
+      cx={cx}
+      cy={cy}
+      r={5.5}
+      fill={payload.signal === 'up' ? '#15966b' : '#d94a59'}
+      stroke="var(--panel-solid)"
+      strokeWidth={2}
+    />
+  );
+}
 function dateKey(value: string) {
   const [m, d, y] = value.slice(0, 10).split('/');
   return `${y}-${m}-${d}`;
 }
 function firstTransactionDate(data: SchwabExport) {
-  const first = data.BrokerageTransactions.reduce<string | null>((earliest, row) => {
-    if (!row.Date) return earliest;
-    const day = dateKey(row.Date);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return earliest;
-    return earliest === null || day < earliest ? day : earliest;
-  }, null);
+  const first = data.BrokerageTransactions.reduce<string | null>(
+    (earliest, row) => {
+      if (!row.Date) return earliest;
+      const day = dateKey(row.Date);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return earliest;
+      return earliest === null || day < earliest ? day : earliest;
+    },
+    null,
+  );
   return first ?? dateKey(data.FromDate);
 }
-function emptySchwabExport(): SchwabExport {
+function emptySchwabExport(fixedDay?: string): SchwabExport {
   const now = new Date();
-  const day = `${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}/${now.getFullYear()}`;
+  const day =
+    fixedDay ??
+    `${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}/${now.getFullYear()}`;
   return {
     FromDate: day,
     ToDate: day,
@@ -262,9 +454,7 @@ function mergeSchwabExports(
   return {
     ...current,
     ...incoming,
-    FromDate: dateKeys[0]
-      ? schwabDateFromKey(dateKeys[0])
-      : incoming.FromDate,
+    FromDate: dateKeys[0] ? schwabDateFromKey(dateKeys[0]) : incoming.FromDate,
     ToDate: dateKeys.at(-1)
       ? schwabDateFromKey(dateKeys.at(-1)!)
       : incoming.ToDate,
@@ -309,22 +499,6 @@ function isAnomaly(row: Transaction) {
 function empty(value: string | undefined) {
   return value || '—';
 }
-function classifyIndustry(symbol: string, description = ''): IndustryTheme {
-  if (SYMBOL_THEMES[symbol]) return SYMBOL_THEMES[symbol];
-  const text = `${symbol} ${description}`.toUpperCase();
-  if (/DRAM|NAND|MEMORY|SK ?HYNIX|MICRON/.test(text)) return '存储与内存';
-  if (/SEMICONDUCTOR|CHIP|FOUNDRY/.test(text)) return '半导体产业链';
-  if (/NASDAQ|QQQ|SOFTWARE|CLOUD|TECHNOLOGY/.test(text)) return '大型科技';
-  if (/DIVIDEND|VALUE|QUALITY/.test(text)) return '红利与价值';
-  if (/BANK|FINANCIAL|INSURANCE|BROKER/.test(text)) return '金融服务';
-  if (/INDUSTRIAL|MANUFACTUR|AEROSPACE|MACHINERY/.test(text)) return '工业制造';
-  if (/HEALTH|BIOTECH|PHARMA|MEDICAL/.test(text)) return '医疗健康';
-  if (/BITCOIN|CRYPTO|ETHEREUM/.test(text)) return '数字资产';
-  if (/TREASURY|T-BILL|SHORT.*BOND|MONEY MARKET/.test(text)) return '现金管理';
-  if (/S&P|TOTAL MARKET|BALANCED|ALLOCATION/.test(text)) return '多元配置';
-  return '其他';
-}
-
 function actionStats(rows: Transaction[]) {
   const buyRows = rows.filter((r) => r.Action === 'Buy');
   const sellRows = rows.filter((r) => r.Action === 'Sell');
@@ -515,83 +689,62 @@ function portfolioLedger(rows: Transaction[]) {
   };
 }
 
-function dailyStats(rows: Transaction[]) {
-  const byDay = new Map<
-    string,
-    { date: string; buy: number; sell: number; transfer: number; net: number }
-  >();
-  for (const row of rows) {
-    const key = dateKey(row.Date);
-    const day = byDay.get(key) ?? {
-      date: key,
-      buy: 0,
-      sell: 0,
-      transfer: 0,
-      net: 0,
-    };
-    const amount = numberFrom(row.Amount);
-    if (row.Action === 'Buy') day.buy += amount;
-    else if (row.Action === 'Sell') day.sell += amount;
-    else day.transfer += amount;
-    day.net += amount;
-    byDay.set(key, day);
-  }
-  let cumulative = 0;
-  return [...byDay.values()]
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .map((day) => ({ ...day, cumulative: (cumulative += day.net) }));
-}
-
-function ChartTooltip({
-  active,
-  payload,
-  label,
-  masked = false,
-}: {
-  active?: boolean;
-  payload?: { name: string; value: number; color: string }[];
-  label?: string;
-  masked?: boolean;
-}) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="chart-tooltip">
-      <strong>{label}</strong>
-      {payload.map((item) => (
-        <div key={item.name}>
-          <i style={{ background: item.color }} />
-          {item.name}
-          <span>{masked ? MASKED_VALUE : money(item.value, 2)}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export default function Home() {
-  const initial = useMemo(() => emptySchwabExport(), []);
+  // Keep the server and browser's first render identical across time zones.
+  const initial = useMemo(() => emptySchwabExport('01/01/1970'), []);
   const [data, setData] = useState<SchwabExport>(initial);
   const [fileName, setFileName] = useState('暂无已保存 JSON');
   const [lastUpdated, setLastUpdated] = useState('尚未导入');
+  const [quotes, setQuotes] = useState<Record<string, MarketQuote>>({});
+  const [quotesUpdatedAt, setQuotesUpdatedAt] = useState('尚未更新');
+  const [quotesLoading, setQuotesLoading] = useState(false);
+  const [quotesError, setQuotesError] = useState('');
+  const [quoteRefreshStatus, setQuoteRefreshStatus] = useState('');
+  const [pairIndicators, setPairIndicators] = useState<PairIndicator[]>([]);
+  const [pairUpdatedAt, setPairUpdatedAt] = useState('尚未更新');
+  const [pairLoading, setPairLoading] = useState(false);
+  const [pairError, setPairError] = useState('');
+  const [clearDialogOpen, setClearDialogOpen] = useState(false);
+  const [manualDialogOpen, setManualDialogOpen] = useState(false);
+  const [editingTransaction, setEditingTransaction] =
+    useState<Transaction | null>(null);
+  const [deleteTransactionOpen, setDeleteTransactionOpen] = useState(false);
+  const [manualTransaction, setManualTransaction] = useState<ManualTransaction>(
+    EMPTY_MANUAL_TRANSACTION,
+  );
+  const [manualError, setManualError] = useState('');
+  const [canUndoTransaction, setCanUndoTransaction] = useState(false);
   const [error, setError] = useState('');
   const [dark, setDark] = useState(false);
+  const [activeView, setActiveView] = useState<'portfolio' | 'dca'>(
+    'portfolio',
+  );
+  const [todayKey, setTodayKey] = useState('1970-01-01');
+  const [selectedDcaMonth, setSelectedDcaMonth] = useState('1970-01');
+  const [dcaPlans, setDcaPlans] = useState<DcaPlan[]>(DEFAULT_DCA_PLANS);
+  const [dcaSettingsOpen, setDcaSettingsOpen] = useState(false);
+  const [dcaPlanNotice, setDcaPlanNotice] = useState('');
   const [amountsMasked, setAmountsMasked] = useState(false);
-  const [startDate, setStartDate] = useState(firstTransactionDate(initial));
-  const [endDate, setEndDate] = useState(dateKey(initial.ToDate));
-  const [action, setAction] = useState('all');
-  const [symbol, setSymbol] = useState('all');
-  const [query, setQuery] = useState('');
   const [onlyAnomalies, setOnlyAnomalies] = useState(false);
   const [excludedIndustries, setExcludedIndustries] = useState<
     Set<IndustryTheme>
   >(new Set());
+  const [excludedDcaSymbols, setExcludedDcaSymbols] = useState<Set<string>>(
+    new Set(),
+  );
   const [page, setPage] = useState(1);
+  const [dcaTransactionPage, setDcaTransactionPage] = useState(1);
   const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection }>({
     key: 'Date',
     direction: 'desc',
   });
+  const [dcaSort, setDcaSort] = useState<{
+    key: SortKey;
+    direction: SortDirection;
+  }>({ key: 'Date', direction: 'desc' });
   const [selected, setSelected] = useState<Transaction | null>(null);
   const viewFileInput = useRef<HTMLInputElement>(null);
+  const dcaPlanFileInput = useRef<HTMLInputElement>(null);
   const updateFileInput = useRef<HTMLInputElement>(null);
   const maintainedDataRef = useRef<SchwabExport>(initial);
   const [maintainedCount, setMaintainedCount] = useState(0);
@@ -602,6 +755,58 @@ export default function Home() {
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark);
   }, [dark]);
+  useEffect(() => {
+    const today = new Intl.DateTimeFormat('sv-SE', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+    setTodayKey(today);
+    setSelectedDcaMonth(today.slice(0, 7));
+    try {
+      const saved = JSON.parse(
+        localStorage.getItem(DCA_PLANS_KEY) || 'null',
+      ) as DcaPlan[] | null;
+      if (Array.isArray(saved) && saved.length === DEFAULT_DCA_PLANS.length) {
+        setDcaPlans(normalizeDcaPlans(saved));
+      }
+    } catch {
+      // Keep the useful defaults when local plan settings are unavailable.
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      setCanUndoTransaction(
+        Boolean(localStorage.getItem(UNDO_TRANSACTION_KEY)),
+      );
+    } catch {
+      // Undo remains unavailable when browser storage cannot be read.
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(PAIR_INDICATORS_KEY);
+      if (!raw) return;
+      const remembered = JSON.parse(raw) as {
+        indicators?: PairIndicator[];
+        updatedAt?: string;
+      };
+      if (Array.isArray(remembered.indicators)) {
+        setPairIndicators(remembered.indicators);
+        setPairUpdatedAt(remembered.updatedAt || '上次更新');
+      }
+    } catch {
+      // Ignore invalid or unavailable browser storage.
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.removeItem('schwab-dashboard:asset-snapshots');
+    } catch {
+      // Remove data left by the retired local snapshot feature when possible.
+    }
+  }, []);
   useEffect(() => {
     try {
       const raw = localStorage.getItem(LAST_IMPORT_KEY);
@@ -616,10 +821,24 @@ export default function Home() {
       setData(remembered.data);
       setFileName(remembered.fileName || '上次导入数据');
       setLastUpdated(remembered.importedAt || '上次导入');
-      setStartDate(firstTransactionDate(remembered.data));
-      setEndDate(dateKey(remembered.data.ToDate));
       setExcludedIndustries(new Set());
       setPage(1);
+    } catch {
+      // Ignore invalid or unavailable browser storage.
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LAST_QUOTES_KEY);
+      if (!raw) return;
+      const remembered = JSON.parse(raw) as {
+        quotes?: Record<string, MarketQuote>;
+        updatedAt?: string;
+      };
+      if (remembered.quotes && typeof remembered.quotes === 'object') {
+        setQuotes(remembered.quotes);
+        setQuotesUpdatedAt(remembered.updatedAt || '上次更新');
+      }
     } catch {
       // Ignore invalid or unavailable browser storage.
     }
@@ -668,16 +887,12 @@ export default function Home() {
             const addedCount =
               merged.BrokerageTransactions.length -
               maintainedDataRef.current.BrokerageTransactions.length;
+            clearTransactionUndoPoint();
             maintainedDataRef.current = merged;
             setMaintainedCount(merged.BrokerageTransactions.length);
             setData(merged);
             setFileName(`累计数据 · ${nextFileName}`);
             setLastUpdated(importedAt);
-            setStartDate(firstTransactionDate(merged));
-            setEndDate(dateKey(merged.ToDate));
-            setAction('all');
-            setSymbol('all');
-            setQuery('');
             setOnlyAnomalies(false);
             setExcludedIndustries(new Set());
             setPage(1);
@@ -697,49 +912,25 @@ export default function Home() {
     return () => lifecycle.abort();
   }, []);
 
-  const allSymbols = useMemo(
-    () =>
-      [
-        ...new Set(
-          data.BrokerageTransactions.map((r) => r.Symbol).filter(Boolean),
-        ),
-      ].sort(),
-    [data],
-  );
   const filtered = useMemo(
     () =>
-      data.BrokerageTransactions.filter((row) => {
-        const day = dateKey(row.Date);
-        const text =
-          `${row.Symbol} ${row.Description} ${row.Action} ${row.Date}`.toLowerCase();
-        const actionMatches =
-          action === 'all' ||
-          (action === 'inflow'
-            ? row.Action === 'Wire Received' ||
-              row.Action === 'MoneyLink Transfer'
-            : row.Action === action);
-        return (
-          day >= startDate &&
-          day <= endDate &&
-          actionMatches &&
-          (symbol === 'all' || row.Symbol === symbol) &&
-          (!query || text.includes(query.toLowerCase())) &&
-          (!onlyAnomalies || isAnomaly(row))
-        );
-      }),
-    [data, startDate, endDate, action, symbol, query, onlyAnomalies],
+      data.BrokerageTransactions.filter(
+        (row) => !onlyAnomalies || isAnomaly(row),
+      ),
+    [data, onlyAnomalies],
   );
-  const stats = useMemo(() => actionStats(filtered), [filtered]);
   const allStats = useMemo(
     () => actionStats(data.BrokerageTransactions),
     [data],
   );
-  const symbols = useMemo(() => symbolStats(filtered), [filtered]);
+  const symbols = useMemo(
+    () => symbolStats(data.BrokerageTransactions),
+    [data],
+  );
   const holdings = useMemo(
     () => portfolioLedger(data.BrokerageTransactions),
     [data],
   );
-  const daily = useMemo(() => dailyStats(filtered), [filtered]);
   const typedHoldings = useMemo(
     () =>
       holdings.positions.map((item) => ({
@@ -761,8 +952,7 @@ export default function Home() {
       .sort((a, b) => b.value - a.value);
   }, [typedHoldings]);
   const displayedIndustryData = useMemo(
-    () =>
-      industryData.filter((item) => !excludedIndustries.has(item.name)),
+    () => industryData.filter((item) => !excludedIndustries.has(item.name)),
     [industryData, excludedIndustries],
   );
   const displayedIndustryCost = useMemo(
@@ -777,6 +967,332 @@ export default function Home() {
         color: THEME_COLORS[item.industryTheme],
       })),
     [typedHoldings],
+  );
+  const marketSummary = useMemo(
+    () =>
+      typedHoldings.reduce(
+        (summary, item) => {
+          const quote = quotes[item.symbol];
+          if (!quote) return summary;
+          const marketValue = item.quantity * quote.current;
+          summary.marketValue += marketValue;
+          summary.unrealizedPnl += marketValue - item.cost;
+          summary.dayChange += item.quantity * quote.change;
+          summary.quotedCount += 1;
+          return summary;
+        },
+        { marketValue: 0, unrealizedPnl: 0, dayChange: 0, quotedCount: 0 },
+      ),
+    [typedHoldings, quotes],
+  );
+  const marketDayChangePercent =
+    marketSummary.marketValue - marketSummary.dayChange
+      ? (marketSummary.dayChange /
+          (marketSummary.marketValue - marketSummary.dayChange)) *
+        100
+      : 0;
+  const maxRealizedPnl = Math.max(
+    ...holdings.realizedPositions.map((item) => Math.abs(item.pnl)),
+    1,
+  );
+  const ledgerCash = allStats.net;
+  const totalAssets =
+    ledgerCash +
+    (marketSummary.quotedCount
+      ? marketSummary.marketValue
+      : holdings.totalCost);
+  const externalNetContributions = useMemo(
+    () =>
+      data.BrokerageTransactions.reduce(
+        (sum, row) =>
+          /wire|moneylink/i.test(row.Action)
+            ? sum + numberFrom(row.Amount)
+            : sum,
+        0,
+      ),
+    [data],
+  );
+  const cashReturns = useMemo(
+    () =>
+      data.BrokerageTransactions.reduce(
+        (summary, row) => {
+          if (/dividend/i.test(row.Action)) {
+            summary.dividends += numberFrom(row.Amount);
+          } else if (/interest/i.test(row.Action)) {
+            summary.interest += numberFrom(row.Amount);
+          }
+          return summary;
+        },
+        { dividends: 0, interest: 0 },
+      ),
+    [data],
+  );
+  const totalPnl = totalAssets - externalNetContributions;
+  const totalPnlPercent = externalNetContributions
+    ? (totalPnl / Math.abs(externalNetContributions)) * 100
+    : 0;
+  const dcaMonth = selectedDcaMonth;
+  const activeDcaPlans = useMemo(
+    () =>
+      dcaPlans.filter(
+        (plan) =>
+          plan.enabled !== false &&
+          [plan.symbol, plan.secondarySymbol].some((symbol) => Boolean(symbol)),
+      ),
+    [dcaPlans],
+  );
+  const dcaPlanSymbols = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          activeDcaPlans.flatMap((plan) =>
+            [plan.symbol, plan.secondarySymbol].filter(
+              (symbol): symbol is string => Boolean(symbol),
+            ),
+          ),
+        ),
+      ),
+    [activeDcaPlans],
+  );
+  const dcaTransactions = useMemo(() => {
+    const planSymbols = new Set(dcaPlanSymbols);
+    return [...data.BrokerageTransactions]
+      .filter((row) => planSymbols.has(row.Symbol))
+      .sort((a, b) => new Date(b.Date).getTime() - new Date(a.Date).getTime());
+  }, [data, dcaPlanSymbols]);
+  const dcaActivity = useMemo(() => {
+    return dcaTransactions
+      .filter((row) => row.Action === 'Buy')
+      .map((row) => ({
+        ...row,
+        day: dateKey(row.Date),
+        invested: Math.abs(numberFrom(row.Amount)),
+      }))
+      .sort((a, b) => b.day.localeCompare(a.day));
+  }, [dcaTransactions]);
+  const sortDcaTransactions = (rows: Transaction[]) => {
+    const numeric = new Set<SortKey>([
+      'Quantity',
+      'Price',
+      'Fees & Comm',
+      'Amount',
+    ]);
+    return [...rows].sort((a, b) => {
+      const av =
+        dcaSort.key === 'Date'
+          ? dateKey(a.Date)
+          : numeric.has(dcaSort.key)
+            ? numberFrom(a[dcaSort.key])
+            : a[dcaSort.key];
+      const bv =
+        dcaSort.key === 'Date'
+          ? dateKey(b.Date)
+          : numeric.has(dcaSort.key)
+            ? numberFrom(b[dcaSort.key])
+            : b[dcaSort.key];
+      return (
+        (av < bv ? -1 : av > bv ? 1 : 0) *
+        (dcaSort.direction === 'asc' ? 1 : -1)
+      );
+    });
+  };
+  const sortedDcaTransactions = useMemo(
+    () => sortDcaTransactions(dcaTransactions),
+    [dcaTransactions, dcaSort],
+  );
+  const dcaMonthTransactions = useMemo(
+    () =>
+      sortedDcaTransactions.filter((row) =>
+        dateKey(row.Date).startsWith(dcaMonth),
+      ),
+    [sortedDcaTransactions, dcaMonth],
+  );
+  const dcaMonthlyAverages = useMemo(
+    () =>
+      dcaPlanSymbols.map((symbol) => {
+        const rows = dcaActivity.filter(
+          (row) => row.Symbol === symbol && row.day.startsWith(dcaMonth),
+        );
+        const quantity = rows.reduce(
+          (sum, row) => sum + numberFrom(row.Quantity),
+          0,
+        );
+        const invested = rows.reduce((sum, row) => sum + row.invested, 0);
+        return {
+          symbol,
+          quantity,
+          invested,
+          averageCost: quantity ? invested / quantity : 0,
+        };
+      }),
+    [dcaActivity, dcaMonth, dcaPlanSymbols],
+  );
+  const dcaPlanRows = useMemo(
+    () =>
+      activeDcaPlans.map((plan) => {
+        const planSymbols = [plan.symbol, plan.secondarySymbol].filter(Boolean);
+        const rows = dcaActivity.filter((row) =>
+          planSymbols.includes(row.Symbol),
+        );
+        const monthRows = rows.filter((row) => row.day.startsWith(dcaMonth));
+        const invested = monthRows.reduce((sum, row) => sum + row.invested, 0);
+        const quantityFor = (symbol: string) =>
+          monthRows
+            .filter((row) => row.Symbol === symbol)
+            .reduce((sum, row) => sum + numberFrom(row.Quantity), 0);
+        const formatShares = (quantity: number) =>
+          quantity.toLocaleString('en-US', { maximumFractionDigits: 4 });
+        const monthShares =
+          plan.priority === 'secondary'
+            ? [
+                quantityFor(plan.symbol)
+                  ? `${plan.symbol} ${formatShares(quantityFor(plan.symbol))} 股`
+                  : '',
+                plan.secondarySymbol && quantityFor(plan.secondarySymbol)
+                  ? `${plan.secondarySymbol} ${formatShares(quantityFor(plan.secondarySymbol))} 股`
+                  : '',
+              ]
+                .filter(Boolean)
+                .join(' / ') || '0 股'
+            : `${formatShares(quantityFor(plan.symbol))} 股`;
+        return {
+          ...plan,
+          invested,
+          monthShares,
+          remaining: Math.max(0, plan.monthlyTarget - invested),
+          overage: Math.max(0, invested - plan.monthlyTarget),
+          progress: plan.monthlyTarget
+            ? (invested / plan.monthlyTarget) * 100
+            : 0,
+          lastBuy: rows[0]?.day || '',
+          monthTrades: monthRows.length,
+        };
+      }),
+    [activeDcaPlans, dcaActivity, dcaMonth],
+  );
+  const dcaMonthlyTarget = activeDcaPlans.reduce(
+    (sum, plan) => sum + plan.monthlyTarget,
+    0,
+  );
+  const dcaMonthInvested = dcaPlanRows.reduce(
+    (sum, plan) => sum + plan.invested,
+    0,
+  );
+  const dcaRemaining = Math.max(0, dcaMonthlyTarget - dcaMonthInvested);
+  const dcaOverage = Math.max(0, dcaMonthInvested - dcaMonthlyTarget);
+  const dcaCompletion = dcaMonthlyTarget
+    ? (dcaMonthInvested / dcaMonthlyTarget) * 100
+    : 0;
+  const dcaYear = Number(dcaMonth.slice(0, 4));
+  const dcaHalf = Number(dcaMonth.slice(5, 7)) <= 6 ? 0 : 1;
+  const dcaYearMonths = useMemo(
+    () =>
+      Array.from({ length: 12 }, (_, index) => {
+        const key = `${dcaYear}-${String(index + 1).padStart(2, '0')}`;
+        const invested = dcaActivity
+          .filter((row) => row.day.startsWith(key))
+          .reduce((sum, row) => sum + row.invested, 0);
+        const target = dcaMonthlyTarget;
+        return {
+          key,
+          label: `${index + 1}月`,
+          invested,
+          target,
+          progress: target ? (invested / target) * 100 : 0,
+          overage: target ? Math.max(0, invested - target) : 0,
+          trades: dcaActivity.filter((row) => row.day.startsWith(key)).length,
+        };
+      }),
+    [dcaActivity, dcaMonthlyTarget, dcaYear],
+  );
+  const dcaCalendar = useMemo(() => {
+    const [year, month] = dcaMonth.split('-').map(Number);
+    const first = new Date(Date.UTC(year, month - 1, 1));
+    const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const leading = first.getUTCDay();
+    const cells = Array.from({ length: leading + days }, (_, index) => {
+      if (index < leading) return null;
+      const day = index - leading + 1;
+      const key = `${dcaMonth}-${String(day).padStart(2, '0')}`;
+      const actions = dcaMonthTransactions.filter(
+        (row) => dateKey(row.Date) === key,
+      );
+      const buys = actions.filter((row) => row.Action === 'Buy');
+      return {
+        day,
+        key,
+        actions,
+        buys,
+        invested: buys.reduce(
+          (sum, row) => sum + Math.abs(numberFrom(row.Amount)),
+          0,
+        ),
+      };
+    });
+    return cells;
+  }, [dcaMonth, dcaMonthTransactions]);
+  const dcaTransactionTotalPages = Math.max(
+    1,
+    Math.ceil(dcaTransactions.length / PAGE_SIZE),
+  );
+  const currentDcaTransactionPage = Math.min(
+    dcaTransactionPage,
+    dcaTransactionTotalPages,
+  );
+  const visibleDcaTransactions = sortedDcaTransactions.slice(
+    (currentDcaTransactionPage - 1) * PAGE_SIZE,
+    currentDcaTransactionPage * PAGE_SIZE,
+  );
+  const dcaAnalysisRows = useMemo(
+    () =>
+      dcaPlanSymbols
+        .map((symbol) => {
+          const holding = typedHoldings.find((item) => item.symbol === symbol);
+          const quote = quotes[symbol];
+          const cost = holding?.cost ?? 0;
+          const marketValue =
+            holding && quote ? holding.quantity * quote.current : 0;
+          return {
+            symbol,
+            description: holding?.description ?? symbol,
+            industryTheme:
+              holding?.industryTheme ?? classifyIndustry(symbol, ''),
+            quantity: holding?.quantity ?? 0,
+            averageCost: holding?.averageCost ?? 0,
+            cost,
+            quote,
+            marketValue,
+            pnl: quote ? marketValue - cost : 0,
+          };
+        })
+        .sort((a, b) => b.cost - a.cost),
+    [typedHoldings, quotes, dcaPlanSymbols],
+  );
+  const dcaAnalysisCost = dcaAnalysisRows.reduce(
+    (sum, row) => sum + row.cost,
+    0,
+  );
+  const dcaAnalysisMarket = dcaAnalysisRows.reduce(
+    (sum, row) => sum + row.marketValue,
+    0,
+  );
+  const dcaAnalysisPnl = dcaAnalysisMarket - dcaAnalysisCost;
+  const dcaAnalysisReturn = dcaAnalysisCost
+    ? (dcaAnalysisPnl / dcaAnalysisCost) * 100
+    : 0;
+  const dcaCostChartData = dcaAnalysisRows
+    .filter((row) => row.cost > 0)
+    .map((row, index) => ({
+      name: row.symbol,
+      value: row.cost,
+      color: ['#2e78c7', '#9c5b32', '#c68a35', '#728c67'][index % 4],
+    }));
+  const displayedDcaCostChartData = dcaCostChartData.filter(
+    (item) => !excludedDcaSymbols.has(item.name),
+  );
+  const displayedDcaCost = displayedDcaCostChartData.reduce(
+    (sum, item) => sum + item.value,
+    0,
   );
   const sortedRows = useMemo(
     () =>
@@ -811,19 +1327,66 @@ export default function Home() {
     (currentPage - 1) * PAGE_SIZE,
     currentPage * PAGE_SIZE,
   );
-  function showData(next: SchwabExport, nextFileName: string, updatedAt: string) {
+  function showData(
+    next: SchwabExport,
+    nextFileName: string,
+    updatedAt: string,
+  ) {
     setData(next);
     setFileName(nextFileName);
     setLastUpdated(updatedAt);
-    setStartDate(firstTransactionDate(next));
-    setEndDate(dateKey(next.ToDate));
-    setAction('all');
-    setSymbol('all');
-    setQuery('');
     setOnlyAnomalies(false);
     setExcludedIndustries(new Set());
     setPage(1);
     setError('');
+  }
+  function saveTransactionUndoPoint() {
+    try {
+      localStorage.setItem(
+        UNDO_TRANSACTION_KEY,
+        JSON.stringify({
+          data: maintainedDataRef.current,
+          fileName,
+          importedAt: lastUpdated,
+        } satisfies RememberedImport),
+      );
+      setCanUndoTransaction(true);
+    } catch {
+      setCanUndoTransaction(false);
+    }
+  }
+  function clearTransactionUndoPoint() {
+    try {
+      localStorage.removeItem(UNDO_TRANSACTION_KEY);
+    } catch {
+      // Ignore unavailable browser storage.
+    }
+    setCanUndoTransaction(false);
+  }
+  function undoLastTransactionChange() {
+    try {
+      const raw = localStorage.getItem(UNDO_TRANSACTION_KEY);
+      if (!raw) return;
+      const snapshot = JSON.parse(raw) as Partial<RememberedImport>;
+      if (!isSchwabExport(snapshot.data)) throw new Error('撤销数据已失效');
+      const restoredAt = new Intl.DateTimeFormat('zh-CN', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(new Date());
+      maintainedDataRef.current = snapshot.data;
+      setMaintainedCount(snapshot.data.BrokerageTransactions.length);
+      showData(snapshot.data, '累计数据 · 已撤销上次手动操作', restoredAt);
+      rememberImport(
+        snapshot.data,
+        '累计数据 · 已撤销上次手动操作',
+        restoredAt,
+      );
+      clearTransactionUndoPoint();
+      setSelected(null);
+    } catch (reason) {
+      clearTransactionUndoPoint();
+      setError(reason instanceof Error ? reason.message : '无法撤销上次操作');
+    }
   }
   async function viewFile(file: File) {
     try {
@@ -849,6 +1412,7 @@ export default function Home() {
         timeStyle: 'short',
       }).format(new Date());
       const merged = mergeSchwabExports(maintainedDataRef.current, next);
+      clearTransactionUndoPoint();
       maintainedDataRef.current = merged;
       setMaintainedCount(merged.BrokerageTransactions.length);
       showData(merged, `维护数据 · ${file.name}`, importedAt);
@@ -867,16 +1431,6 @@ export default function Home() {
     if (file) await updateFile(file);
     event.target.value = '';
   }
-  function resetFilters() {
-    setStartDate(firstTransactionDate(data));
-    setEndDate(dateKey(data.ToDate));
-    setAction('all');
-    setSymbol('all');
-    setQuery('');
-    setOnlyAnomalies(false);
-    setExcludedIndustries(new Set());
-    setPage(1);
-  }
   function clearJsonRecords() {
     const emptyData = emptySchwabExport();
     const clearedAt = new Intl.DateTimeFormat('zh-CN', {
@@ -888,19 +1442,317 @@ export default function Home() {
     setData(emptyData);
     setFileName('暂无已保存 JSON');
     setLastUpdated(clearedAt);
-    setStartDate(firstTransactionDate(emptyData));
-    setEndDate(dateKey(emptyData.ToDate));
-    setAction('all');
-    setSymbol('all');
-    setQuery('');
     setOnlyAnomalies(false);
     setExcludedIndustries(new Set());
     setPage(1);
     setError('');
     try {
       localStorage.removeItem(LAST_IMPORT_KEY);
+      localStorage.removeItem('schwab-dashboard:asset-snapshots');
+      localStorage.removeItem(UNDO_TRANSACTION_KEY);
+      setCanUndoTransaction(false);
     } catch {
       // Ignore unavailable browser storage.
+    }
+  }
+  function openManualTransactionDialog() {
+    const today = new Intl.DateTimeFormat('sv-SE', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+    setManualTransaction({ ...EMPTY_MANUAL_TRANSACTION, date: today });
+    setEditingTransaction(null);
+    setManualError('');
+    setManualDialogOpen(true);
+  }
+  function saveDcaPlans() {
+    const normalized = normalizeDcaPlans(dcaPlans);
+    setDcaPlans(normalized);
+    try {
+      localStorage.setItem(DCA_PLANS_KEY, JSON.stringify(normalized));
+    } catch {
+      // Settings remain active for this session when storage is unavailable.
+    }
+    setDcaSettingsOpen(false);
+  }
+  function exportDcaPlans() {
+    const payload: DcaPlanExport = {
+      format: 'schwab-dashboard-dca-plan',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      plans: normalizeDcaPlans(dcaPlans),
+    };
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(payload, null, 2)], {
+        type: 'application/json;charset=utf-8',
+      }),
+    );
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `schwab-dca-plan-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+  async function importDcaPlans(file: File) {
+    try {
+      const parsed = JSON.parse(await file.text()) as unknown;
+      if (!isDcaPlanExport(parsed)) {
+        throw new Error('文件不是有效的定投计划 JSON');
+      }
+      const normalized = normalizeDcaPlans(parsed.plans);
+      setDcaPlans(normalized);
+      localStorage.setItem(DCA_PLANS_KEY, JSON.stringify(normalized));
+      setDcaPlanNotice(`已导入定投计划：${file.name}`);
+    } catch (reason) {
+      setDcaPlanNotice(
+        reason instanceof Error ? reason.message : '定投计划无法导入',
+      );
+    }
+  }
+  async function importDcaPlanFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (file) await importDcaPlans(file);
+    event.target.value = '';
+  }
+  function shiftDcaMonth(offset: number) {
+    const [year, month] = selectedDcaMonth.split('-').map(Number);
+    const shifted = new Date(Date.UTC(year, month - 1 + offset, 1));
+    setSelectedDcaMonth(
+      `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}`,
+    );
+  }
+  function openEditTransactionDialog() {
+    if (!selected) return;
+    if (!maintainedDataRef.current.BrokerageTransactions.includes(selected)) {
+      setError('临时查看的数据不能直接修改，请先通过“更新 JSON”并入累计记录');
+      return;
+    }
+    setEditingTransaction(selected);
+    setManualTransaction({
+      date: dateKey(selected.Date),
+      action: selected.Action,
+      symbol: selected.Symbol,
+      description: selected.Description,
+      quantity: selected.Quantity,
+      price: selected.Price ? String(numberFrom(selected.Price)) : '',
+      fees: selected['Fees & Comm']
+        ? String(Math.abs(numberFrom(selected['Fees & Comm'])))
+        : '0',
+      amount: String(numberFrom(selected.Amount)),
+    });
+    setManualError('');
+    setManualDialogOpen(true);
+  }
+  function saveManualTransaction() {
+    const draft = manualTransaction;
+    const isTrade = draft.action === 'Buy' || draft.action === 'Sell';
+    const quantity = Number(draft.quantity);
+    const price = Number(draft.price);
+    const fees = Math.abs(Number(draft.fees) || 0);
+    const symbol = draft.symbol.trim().toUpperCase();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.date)) {
+      setManualError('请选择有效日期');
+      return;
+    }
+    if (isTrade && (!symbol || !(quantity > 0) || !(price > 0))) {
+      setManualError('买入或卖出需要填写标的、数量和成交价');
+      return;
+    }
+    const calculatedAmount =
+      draft.action === 'Buy'
+        ? -(quantity * price + fees)
+        : draft.action === 'Sell'
+          ? quantity * price - fees
+          : Number(draft.amount);
+    const amount = draft.amount.trim()
+      ? Number(draft.amount)
+      : calculatedAmount;
+    if (!Number.isFinite(amount) || (!isTrade && !draft.amount.trim())) {
+      setManualError('请填写有效的交易金额');
+      return;
+    }
+    const row: Transaction = {
+      Date: schwabDateFromKey(draft.date),
+      Action: draft.action,
+      Symbol: symbol,
+      Description: draft.description.trim(),
+      Quantity: isTrade ? String(quantity) : draft.quantity.trim(),
+      Price: isTrade ? `$${price.toFixed(2)}` : draft.price.trim(),
+      'Fees & Comm': fees ? `$${fees.toFixed(2)}` : '$0.00',
+      Amount: `${amount < 0 ? '-' : ''}$${Math.abs(amount).toFixed(2)}`,
+      AcctgRuleCd: 'MANUAL',
+    };
+    const currentRows = maintainedDataRef.current.BrokerageTransactions;
+    const editingIndex = editingTransaction
+      ? currentRows.findIndex((item) => item === editingTransaction)
+      : -1;
+    if (editingTransaction && editingIndex < 0) {
+      setManualError('原交易已不存在，请关闭后重试');
+      return;
+    }
+    const nextRows =
+      editingIndex >= 0
+        ? currentRows.map((item, index) =>
+            index === editingIndex ? row : item,
+          )
+        : [...currentRows, row];
+    saveTransactionUndoPoint();
+    const next = mergeSchwabExports(emptySchwabExport(), {
+      ...maintainedDataRef.current,
+      BrokerageTransactions: nextRows,
+    });
+    const addedAt = new Intl.DateTimeFormat('zh-CN', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(new Date());
+    maintainedDataRef.current = next;
+    setMaintainedCount(next.BrokerageTransactions.length);
+    const updateLabel = editingTransaction
+      ? '累计数据 · 已修改单条交易'
+      : '累计数据 · 手动添加';
+    showData(next, updateLabel, addedAt);
+    rememberImport(next, updateLabel, addedAt);
+    setSelected(null);
+    setEditingTransaction(null);
+    setManualDialogOpen(false);
+  }
+  function deleteSelectedTransaction() {
+    if (!selected) return;
+    const current = maintainedDataRef.current;
+    const selectedIndex = current.BrokerageTransactions.findIndex(
+      (row) => row === selected,
+    );
+    if (selectedIndex < 0) {
+      setError('临时查看的数据不能直接删除，请先通过“更新 JSON”并入累计记录');
+      setDeleteTransactionOpen(false);
+      setSelected(null);
+      return;
+    }
+    saveTransactionUndoPoint();
+    const remaining = current.BrokerageTransactions.filter(
+      (_, index) => index !== selectedIndex,
+    );
+    const next = remaining.length
+      ? mergeSchwabExports(emptySchwabExport(), {
+          ...current,
+          BrokerageTransactions: remaining,
+        })
+      : emptySchwabExport();
+    const deletedAt = new Intl.DateTimeFormat('zh-CN', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(new Date());
+    maintainedDataRef.current = next;
+    setMaintainedCount(next.BrokerageTransactions.length);
+    showData(next, '累计数据 · 已删除单条交易', deletedAt);
+    rememberImport(next, '累计数据 · 已删除单条交易', deletedAt);
+    setDeleteTransactionOpen(false);
+    setSelected(null);
+  }
+  async function refreshPairIndicators() {
+    if (pairLoading) return;
+    setPairLoading(true);
+    setPairError('');
+    try {
+      const response = await fetch('/api/pair-indicators', {
+        cache: 'no-store',
+      });
+      const payload = (await response.json()) as {
+        series?: Record<string, CandleSeries>;
+        fetchedAt?: string;
+        error?: string;
+      };
+      if (!response.ok || !payload.series?.QQQ) {
+        throw new Error(payload.error || '配对指标更新失败');
+      }
+      const indicators = PAIR_SYMBOLS.map((symbol) => {
+        const source = payload.series?.[symbol];
+        return source
+          ? calculatePairIndicator(symbol, source, payload.series!.QQQ)
+          : null;
+      }).filter((item): item is PairIndicator => Boolean(item));
+      if (!indicators.length) throw new Error('历史行情不足，无法计算配对指标');
+      const updatedAt = new Intl.DateTimeFormat('zh-CN', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(new Date(payload.fetchedAt || Date.now()));
+      setPairIndicators(indicators);
+      setPairUpdatedAt(updatedAt);
+      localStorage.setItem(
+        PAIR_INDICATORS_KEY,
+        JSON.stringify({ indicators, updatedAt }),
+      );
+      if (indicators.length < PAIR_SYMBOLS.length) {
+        setPairError(
+          `${PAIR_SYMBOLS.length - indicators.length} 组历史行情不可用`,
+        );
+      }
+    } catch (reason) {
+      setPairError(
+        reason instanceof Error ? reason.message : '配对指标更新失败',
+      );
+    } finally {
+      setPairLoading(false);
+    }
+  }
+  function clearPairIndicatorCache() {
+    try {
+      localStorage.removeItem(PAIR_INDICATORS_KEY);
+      localStorage.removeItem('schwab-dashboard:bo-pair-indicators');
+    } catch {
+      // The visible state can still be cleared when storage is unavailable.
+    }
+    setPairIndicators([]);
+    setPairUpdatedAt('尚未更新');
+    setPairError('');
+  }
+  async function refreshQuotes() {
+    const symbols = holdings.positions.map((item) => item.symbol);
+    if (!symbols.length || quotesLoading) return;
+    setQuotesLoading(true);
+    setQuotesError('');
+    try {
+      const response = await fetch('/api/quotes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbols }),
+      });
+      const payload = (await response.json()) as {
+        quotes?: Record<string, MarketQuote>;
+        fetchedAt?: string;
+        error?: string;
+      };
+      if (!response.ok || !payload.quotes) {
+        throw new Error(payload.error || '行情更新失败');
+      }
+      const updatedAt = new Intl.DateTimeFormat('zh-CN', {
+        dateStyle: 'medium',
+        timeStyle: 'medium',
+      }).format(new Date(payload.fetchedAt || Date.now()));
+      const mergedQuotes = { ...quotes, ...payload.quotes };
+      const freshCount = symbols.filter(
+        (symbol) => payload.quotes?.[symbol],
+      ).length;
+      const reusedCount = symbols.filter(
+        (symbol) => !payload.quotes?.[symbol] && quotes[symbol],
+      ).length;
+      setQuotes(mergedQuotes);
+      setQuotesUpdatedAt(updatedAt);
+      setQuoteRefreshStatus(
+        reusedCount
+          ? `${freshCount} 个最新 · ${reusedCount} 个沿用旧价`
+          : `${freshCount} 个最新`,
+      );
+      localStorage.setItem(
+        LAST_QUOTES_KEY,
+        JSON.stringify({ quotes: mergedQuotes, updatedAt }),
+      );
+    } catch (reason) {
+      setQuotesError(reason instanceof Error ? reason.message : '行情更新失败');
+    } finally {
+      setQuotesLoading(false);
     }
   }
   function exportMaintainedJson() {
@@ -917,8 +1769,8 @@ export default function Home() {
   }
   function exportPagePdf() {
     const previousTitle = document.title;
-    const rangeStart = startDate || firstTransactionDate(data);
-    const rangeEnd = endDate || dateKey(data.ToDate);
+    const rangeStart = firstTransactionDate(data);
+    const rangeEnd = dateKey(data.ToDate);
     document.title = `持仓分析看板_${rangeStart}_至_${rangeEnd}`;
     const restoreTitle = () => {
       document.title = previousTitle;
@@ -933,8 +1785,22 @@ export default function Home() {
         current.key === key && current.direction === 'desc' ? 'asc' : 'desc',
     }));
   }
+  function updateDcaSort(key: SortKey) {
+    setDcaSort((current) => ({
+      key,
+      direction:
+        current.key === key && current.direction === 'desc' ? 'asc' : 'desc',
+    }));
+    setDcaTransactionPage(1);
+  }
   const sortHead = (key: SortKey, label: string) => (
     <button className="sort-button" onClick={() => updateSort(key)}>
+      {label}
+      <ChevronsUpDown size={13} />
+    </button>
+  );
+  const dcaSortHead = (key: SortKey, label: string) => (
+    <button className="sort-button" onClick={() => updateDcaSort(key)}>
       {label}
       <ChevronsUpDown size={13} />
     </button>
@@ -953,13 +1819,18 @@ export default function Home() {
           </div>
         </div>
         <div className="period">
-          <span>统计周期</span>
+          <span>数据覆盖</span>
           <strong>
-            {displayDate(data.FromDate)} — {displayDate(data.ToDate)}
+            {data.BrokerageTransactions.length
+              ? `${displayDate(schwabDateFromKey(firstTransactionDate(data)))} — ${displayDate(data.ToDate)} · ${data.BrokerageTransactions.length} 条`
+              : '尚未导入交易记录'}
           </strong>
         </div>
         <div className="top-actions">
-          <span className="updated">更新：{lastUpdated}</span>
+          <span className="updated" title={`完整更新时间：${lastUpdated}`}>
+            更新：
+            {lastUpdated.replace(/(\d{4})年(\d{1,2})月(\d{1,2})日/, '$2/$3')}
+          </span>
           <input
             ref={viewFileInput}
             type="file"
@@ -976,57 +1847,42 @@ export default function Home() {
           />
           <Button
             variant="outline"
-            onClick={() => viewFileInput.current?.click()}
-          >
-            <Upload />
-            上传 JSON
-          </Button>
-          <Button
-            variant="outline"
             onClick={() => updateFileInput.current?.click()}
           >
             <RefreshCcw />
             更新 JSON
           </Button>
-          <Button
-            variant="outline"
-            onClick={exportMaintainedJson}
-            disabled={maintainedCount === 0}
-          >
-            <FileJson />
-            导出 JSON
-          </Button>
-          <AlertDialog>
-            <AlertDialogTrigger
+          <DropdownMenu>
+            <DropdownMenuTrigger
               render={
                 <Button variant="outline">
-                  <Trash2 />
-                  清空 JSON
+                  <MoreHorizontal />
+                  <span>更多</span>
                 </Button>
               }
             />
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>确认清空全部 JSON 记录？</AlertDialogTitle>
-                <AlertDialogDescription>
-                  这会删除当前浏览器中保存的全部交易记录，操作无法撤销。之后仍可重新上传 JSON。
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>取消</AlertDialogCancel>
-                <AlertDialogAction
-                  variant="destructive"
-                  onClick={clearJsonRecords}
-                >
-                  确认清空
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-          <Button variant="outline" onClick={exportPagePdf}>
-            <Download />
-            导出页面 PDF
-          </Button>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={() => viewFileInput.current?.click()}>
+                <Upload /> 临时上传 JSON
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={exportMaintainedJson}
+                disabled={maintainedCount === 0}
+              >
+                <FileJson /> 导出 JSON
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={exportPagePdf}>
+                <Download /> 导出页面 PDF
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                variant="destructive"
+                onClick={() => setClearDialogOpen(true)}
+              >
+                <Trash2 /> 清空 JSON
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             variant="ghost"
             size="icon"
@@ -1047,7 +1903,1063 @@ export default function Home() {
           </Button>
         </div>
       </header>
-      <section className="content">
+      <nav className="workspace-nav" aria-label="看板页面">
+        <button
+          className={activeView === 'portfolio' ? 'active' : ''}
+          onClick={() => setActiveView('portfolio')}
+        >
+          资产看板
+        </button>
+        <button
+          className={activeView === 'dca' ? 'active' : ''}
+          onClick={() => setActiveView('dca')}
+        >
+          定投计划
+        </button>
+      </nav>
+      <aside className="dca-source-note" aria-label="数据源说明">
+        <strong>数据源</strong>
+        <span>
+          <b>交易与成本</b> 嘉信 JSON · 本地导入
+        </span>
+        <span>
+          <b>现价与今日涨跌</b> Finnhub · 手动更新
+        </span>
+        <span>
+          <b>Bo Pair 历史日线</b> Twelve Data · 手动更新
+        </span>
+        <span>
+          <b>定投计划</b> 当前浏览器本地保存
+        </span>
+      </aside>
+      <AlertDialog open={clearDialogOpen} onOpenChange={setClearDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认清空全部 JSON 记录？</AlertDialogTitle>
+            <AlertDialogDescription>
+              这会删除当前浏览器中保存的全部交易记录及资产快照，操作无法撤销。之后仍可重新上传
+              JSON。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={clearJsonRecords}>
+              确认清空
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <section
+        className={`content dca-page ${activeView === 'dca' ? '' : 'view-hidden'}`}
+      >
+        <div className="dca-heading">
+          <div>
+            <p>DCA PLAN · {dcaMonth || '—'}</p>
+            <h1>
+              {dcaMonth === todayKey.slice(0, 7)
+                ? `${dcaMonth.slice(0, 4)}年${Number(dcaMonth.slice(5))}月定投（本月）`
+                : `${dcaMonth.slice(0, 4)}年${Number(dcaMonth.slice(5))}月定投`}
+            </h1>
+            <span>实际执行直接取自交易记录，无需重复记账。</span>
+          </div>
+          <div className="dca-heading-actions">
+            <input
+              ref={dcaPlanFileInput}
+              type="file"
+              accept=".json,application/json"
+              hidden
+              onChange={importDcaPlanFile}
+            />
+            <div className="dca-month-picker">
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="查看上个月"
+                onClick={() => shiftDcaMonth(-1)}
+              >
+                <ChevronLeft />
+              </Button>
+              <Input
+                type="month"
+                aria-label="选择定投月份"
+                max={todayKey.slice(0, 7)}
+                value={selectedDcaMonth}
+                onChange={(event) => setSelectedDcaMonth(event.target.value)}
+              />
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="查看下个月"
+                disabled={selectedDcaMonth >= todayKey.slice(0, 7)}
+                onClick={() => shiftDcaMonth(1)}
+              >
+                <ChevronRight />
+              </Button>
+            </div>
+            <Button
+              variant="outline"
+              onClick={refreshQuotes}
+              disabled={!holdings.positions.length || quotesLoading}
+            >
+              <RefreshCcw className={quotesLoading ? 'is-spinning' : ''} />
+              更新行情
+            </Button>
+            <Button variant="outline" onClick={() => setDcaSettingsOpen(true)}>
+              <Settings2 /> 设置计划
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button variant="outline" aria-label="定投计划文件操作">
+                    <FileJson /> 文件
+                  </Button>
+                }
+              />
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={exportDcaPlans}>
+                  <Download /> 导出定投计划 JSON
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => dcaPlanFileInput.current?.click()}
+                >
+                  <Upload /> 导入定投计划 JSON
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+        {dcaPlanNotice ? (
+          <div className="dca-plan-notice" role="status">
+            {dcaPlanNotice}
+            <button aria-label="关闭提示" onClick={() => setDcaPlanNotice('')}>
+              <X />
+            </button>
+          </div>
+        ) : null}
+
+        <section className="dca-period-layout">
+          <article className="panel dca-year-panel">
+            <div className="panel-head">
+              <div>
+                <p>年度节奏</p>
+                <h2>
+                  {dcaYear} 年{dcaHalf === 0 ? '上半年' : '下半年'}定投完成情况
+                </h2>
+              </div>
+              <div className="dca-half-switch" aria-label="切换上下半年">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label="查看上半年"
+                  disabled={dcaHalf === 0}
+                  onClick={() => setSelectedDcaMonth(`${dcaYear}-01`)}
+                >
+                  <ChevronLeft />
+                </Button>
+                <span>{dcaHalf === 0 ? '1—6月' : '7—12月'}</span>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label="查看下半年"
+                  disabled={dcaHalf === 1}
+                  onClick={() => setSelectedDcaMonth(`${dcaYear}-07`)}
+                >
+                  <ChevronRight />
+                </Button>
+              </div>
+            </div>
+            <div className="dca-compact-metrics">
+              <div>
+                <span>当月计划</span>
+                <strong>{displayMoney(dcaMonthlyTarget, 0)}</strong>
+                <small>
+                  {dcaPlanSymbols.length
+                    ? `${dcaPlanSymbols.join('、')} 合计`
+                    : '尚未启用'}
+                </small>
+              </div>
+              <div>
+                <span>已投入</span>
+                <strong>{displayMoney(dcaMonthInvested, 2)}</strong>
+                <small>
+                  {dcaPlanRows.reduce((sum, plan) => sum + plan.monthTrades, 0)}{' '}
+                  笔买入
+                </small>
+              </div>
+              <div>
+                <span>{dcaOverage > 0 ? '超额投入' : '待投入'}</span>
+                <strong>
+                  {displayMoney(dcaOverage > 0 ? dcaOverage : dcaRemaining, 2)}
+                </strong>
+                <small>{dcaOverage > 0 ? '已超过计划' : '距离计划'}</small>
+              </div>
+              <div>
+                <span>账面现金</span>
+                <strong>{displayMoney(ledgerCash, 2)}</strong>
+                <small>
+                  {ledgerCash >= dcaRemaining ? '可覆盖余下计划' : '低于待投入'}
+                </small>
+              </div>
+            </div>
+            <div className="dca-year-grid">
+              {dcaYearMonths.slice(dcaHalf * 6, dcaHalf * 6 + 6).map((item) => (
+                <button
+                  key={item.key}
+                  className={`dca-year-month ${item.key === dcaMonth ? 'active' : ''} ${item.progress >= 100 ? 'complete' : ''}`}
+                  onClick={() => setSelectedDcaMonth(item.key)}
+                  aria-label={`${item.label} 已投入 ${displayMoney(item.invested, 0)}`}
+                >
+                  <span>{item.label}</span>
+                  <i
+                    className="dca-year-ring"
+                    style={
+                      {
+                        '--ring-progress': `${Math.min(100, item.progress) * 3.6}deg`,
+                      } as React.CSSProperties
+                    }
+                  >
+                    <b>{item.progress.toFixed(0)}%</b>
+                  </i>
+                  <small>
+                    {item.trades
+                      ? `${item.trades} 笔 · ${displayMoney(item.invested, 0)}`
+                      : '暂无买入'}
+                  </small>
+                </button>
+              ))}
+            </div>
+          </article>
+
+          <article className="panel dca-calendar-panel">
+            <div className="panel-head">
+              <div>
+                <p>
+                  <CalendarDays /> 当月动作
+                </p>
+                <h2>{Number(dcaMonth.slice(5))} 月交易日历</h2>
+              </div>
+              <span className="dca-note">点选日期查看记录</span>
+            </div>
+            <div className="dca-calendar-week">
+              <span>日</span>
+              <span>一</span>
+              <span>二</span>
+              <span>三</span>
+              <span>四</span>
+              <span>五</span>
+              <span>六</span>
+            </div>
+            <div className="dca-calendar-grid">
+              {dcaCalendar.map((cell, index) =>
+                cell ? (
+                  <button
+                    key={cell.key}
+                    className={`dca-calendar-day ${cell.buys.length ? 'buy' : ''} ${cell.actions.some((row) => row.Action === 'Sell') ? 'sell' : ''}`}
+                    title={
+                      cell.actions.length
+                        ? cell.actions
+                            .map((row) => `${row.Action} ${row.Symbol}`)
+                            .join(' · ')
+                        : undefined
+                    }
+                    onClick={() =>
+                      cell.actions[0] && setSelected(cell.actions[0])
+                    }
+                    disabled={!cell.actions.length}
+                  >
+                    <span>{cell.day}</span>
+                    {cell.actions.length ? (
+                      <i>{cell.buys.length ? '买' : '卖'}</i>
+                    ) : null}
+                  </button>
+                ) : (
+                  <span className="dca-calendar-empty" key={`empty-${index}`} />
+                ),
+              )}
+            </div>
+            <div className="dca-calendar-legend">
+              <span>
+                <i className="buy" />
+                买入
+              </span>
+              <span>
+                <i className="sell" />
+                卖出
+              </span>
+              <small>有动作的日期会标记</small>
+            </div>
+          </article>
+        </section>
+
+        <section className="panel dca-plan-panel">
+          <div className="panel-head">
+            <div>
+              <p>执行面板</p>
+              <h2>当月定投计划</h2>
+            </div>
+            <span className="dca-note">额度是节奏参考，不自动下单</span>
+          </div>
+          <div className="dca-plan-grid">
+            {dcaPlanRows.map((plan) => {
+              const ringProgress = Math.min(100, Math.max(0, plan.progress));
+              const planSymbolsLabel = [plan.symbol, plan.secondarySymbol]
+                .filter(Boolean)
+                .join(' / ');
+              const shareEstimate = (symbol: string) => {
+                const price = quotes[symbol]?.current;
+                return price && price > 0
+                  ? (plan.remaining / price).toLocaleString('en-US', {
+                      maximumFractionDigits: 2,
+                    })
+                  : '';
+              };
+              const remainingShares =
+                plan.priority === 'secondary'
+                  ? [
+                      shareEstimate(plan.symbol)
+                        ? `${plan.symbol} ${shareEstimate(plan.symbol)} 股`
+                        : '',
+                      plan.secondarySymbol &&
+                      shareEstimate(plan.secondarySymbol)
+                        ? `${plan.secondarySymbol} ${shareEstimate(plan.secondarySymbol)} 股`
+                        : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' / ')
+                  : shareEstimate(plan.symbol)
+                    ? `${shareEstimate(plan.symbol)} 股`
+                    : '';
+              return (
+                <article
+                  className={`dca-plan-card ${plan.priority}`}
+                  key={`${plan.priority}-${planSymbolsLabel}`}
+                >
+                  <div className="dca-plan-top">
+                    <div className="dca-symbol">
+                      <i>
+                        {plan.priority === 'secondary'
+                          ? '防御'
+                          : plan.symbol.slice(0, 2)}
+                      </i>
+                      <div>
+                        <strong>
+                          {plan.priority === 'secondary'
+                            ? planSymbolsLabel
+                            : plan.symbol}
+                        </strong>
+                        <span>
+                          {plan.priority === 'primary' ? '主定投' : '次定投'}
+                        </span>
+                      </div>
+                    </div>
+                    <span
+                      className={`dca-status ${plan.progress >= 100 ? 'done' : ''}`}
+                    >
+                      {plan.overage > 0
+                        ? `超额 ${displayMoney(plan.overage, 0)}`
+                        : plan.progress >= 100
+                          ? '当月完成'
+                          : '进行中'}
+                    </span>
+                  </div>
+                  <div className="dca-plan-body">
+                    <div
+                      className="dca-progress-ring"
+                      style={
+                        {
+                          '--ring-progress': `${ringProgress * 3.6}deg`,
+                        } as React.CSSProperties
+                      }
+                      role="img"
+                      aria-label={`${plan.priority === 'secondary' ? '防御类' : plan.symbol} 完成 ${plan.progress.toFixed(0)}%`}
+                    >
+                      <div>
+                        <strong>{plan.progress.toFixed(0)}%</strong>
+                        <span>
+                          {plan.progress >= 100 ? '已完成' : '完成度'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="dca-plan-numbers">
+                      <span>当月已投入</span>
+                      <strong>{displayMoney(plan.invested, 2)}</strong>
+                      <small className="dca-invested-shares">
+                        {amountsMasked ? MASKED_VALUE : plan.monthShares}
+                      </small>
+                      <small>计划 {displayMoney(plan.monthlyTarget, 0)}</small>
+                    </div>
+                  </div>
+                  <div className="dca-plan-meta">
+                    <span>当月 {plan.monthTrades} 笔</span>
+                    <span>
+                      {plan.lastBuy
+                        ? `最近 ${plan.lastBuy.slice(5).replace('-', '/')}`
+                        : '尚无买入'}
+                    </span>
+                    <span>
+                      {plan.priority === 'secondary'
+                        ? '两者投入合并统计'
+                        : quotes[plan.symbol]
+                          ? `现价 ${displayMoney(quotes[plan.symbol].current, 2)}`
+                          : '行情未更新'}
+                    </span>
+                  </div>
+                  <div className="dca-plan-footer">
+                    <div>
+                      <span>{plan.overage > 0 ? '超额投入' : '尚需投入'}</span>
+                      <strong>
+                        {displayMoney(
+                          plan.overage > 0 ? plan.overage : plan.remaining,
+                          2,
+                        )}
+                      </strong>
+                      {!plan.overage && plan.remaining > 0 ? (
+                        <small className="dca-share-estimate">
+                          {amountsMasked
+                            ? MASKED_VALUE
+                            : remainingShares
+                              ? `按现价约 ${remainingShares}`
+                              : '更新行情后估算股数'}
+                        </small>
+                      ) : null}
+                    </div>
+                    <span className="dca-readonly-label">自动读取交易记录</span>
+                  </div>
+                </article>
+              );
+            })}
+            {!dcaPlanRows.length ? (
+              <div className="empty-state dca-plan-empty">
+                请在“设置计划”中填写至少一个定投标的
+              </div>
+            ) : null}
+          </div>
+        </section>
+
+        <div className="dca-analysis-layout">
+          <section className="panel dca-analysis-panel">
+            <div className="panel-head">
+              <div>
+                <p>持仓分析</p>
+                <h2>定投标的</h2>
+              </div>
+              <span className="dca-note">按真实持仓与最新行情计算</span>
+            </div>
+            <div className="dca-monthly-average-grid">
+              {dcaMonthlyAverages.map((item) => (
+                <div key={item.symbol}>
+                  <span>{item.symbol} · 当月每股现金成本</span>
+                  <strong>
+                    {item.quantity ? displayMoney(item.averageCost, 2) : '—'}
+                  </strong>
+                  <small>
+                    {item.quantity
+                      ? `${amountsMasked ? MASKED_VALUE : `${item.quantity.toLocaleString('en-US', { maximumFractionDigits: 4 })} 股`} · ${displayMoney(item.invested, 2)}`
+                      : '当月无买入'}
+                  </small>
+                </div>
+              ))}
+            </div>
+            <div className="dca-analysis-table-wrap">
+              <table className="dca-analysis-table">
+                <thead>
+                  <tr>
+                    <th>标的</th>
+                    <th>持仓数量</th>
+                    <th>现金均价</th>
+                    <th>真实现金成本</th>
+                    <th>现价 / 今日</th>
+                    <th>市值 / 浮盈亏</th>
+                    <th>成本占比</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dcaAnalysisRows.map((row) => {
+                    const share = dcaAnalysisCost
+                      ? (row.cost / dcaAnalysisCost) * 100
+                      : 0;
+                    const assetColor = [
+                      '#2e78c7',
+                      '#9c5b32',
+                      '#c68a35',
+                      '#728c67',
+                    ][Math.max(0, dcaPlanSymbols.indexOf(row.symbol)) % 4];
+                    return (
+                      <tr key={row.symbol}>
+                        <td>
+                          <div className="holding-identity dca-asset-identity">
+                            <i
+                              style={
+                                {
+                                  '--asset-color':
+                                    THEME_COLORS[row.industryTheme],
+                                } as React.CSSProperties
+                              }
+                            >
+                              {row.symbol.slice(0, 2)}
+                            </i>
+                            <div>
+                              <div className="holding-symbol-line">
+                                <strong>{row.symbol}</strong>
+                                <Badge
+                                  className="asset-type-badge"
+                                  style={
+                                    {
+                                      '--asset-color':
+                                        THEME_COLORS[row.industryTheme],
+                                    } as React.CSSProperties
+                                  }
+                                >
+                                  {row.industryTheme}
+                                </Badge>
+                              </div>
+                              <span>{row.description}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="numeric mono">
+                          {amountsMasked
+                            ? MASKED_VALUE
+                            : row.quantity
+                              ? row.quantity.toLocaleString('en-US', {
+                                  maximumFractionDigits: 4,
+                                })
+                              : '—'}
+                        </td>
+                        <td className="numeric mono">
+                          {row.cost ? displayMoney(row.averageCost, 2) : '—'}
+                        </td>
+                        <td className="numeric mono">
+                          {row.cost ? displayMoney(row.cost, 2) : '—'}
+                        </td>
+                        <td className="numeric mono">
+                          {row.quote ? (
+                            <div className="market-cell">
+                              <strong>
+                                {displayMoney(row.quote.current, 2)}
+                              </strong>
+                              <small
+                                className={
+                                  row.quote.changePercent >= 0 ? 'pos' : 'neg'
+                                }
+                              >
+                                {row.quote.changePercent >= 0 ? '+' : ''}
+                                {row.quote.changePercent.toFixed(2)}%
+                              </small>
+                            </div>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                        <td className="numeric mono">
+                          {row.quote && row.cost ? (
+                            <div className="market-cell">
+                              <strong>
+                                {displayMoney(row.marketValue, 2)}
+                              </strong>
+                              <small className={row.pnl >= 0 ? 'pos' : 'neg'}>
+                                {row.pnl >= 0 ? '+' : ''}
+                                {displayMoney(row.pnl, 2)}
+                              </small>
+                            </div>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                        <td>
+                          <div className="share-cell">
+                            <strong>
+                              {share ? `${share.toFixed(1)}%` : '—'}
+                            </strong>
+                            <span>
+                              <i
+                                style={{
+                                  width: `${share}%`,
+                                  background: assetColor,
+                                }}
+                              />
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="panel dca-insights-panel">
+            <div className="panel-head">
+              <div>
+                <p>成本构成</p>
+                <h2>定投篮子表现</h2>
+              </div>
+              <span className="dca-note">点击图例隐藏 / 显示</span>
+            </div>
+            <div className="dca-analysis-side">
+              <div className="dca-performance-hero">
+                <span>当前市值</span>
+                <strong>
+                  {dcaAnalysisMarket ? displayMoney(dcaAnalysisMarket, 2) : '—'}
+                </strong>
+                <div className={dcaAnalysisPnl >= 0 ? 'pos' : 'neg'}>
+                  <b>
+                    {dcaAnalysisMarket
+                      ? `${dcaAnalysisPnl >= 0 ? '+' : ''}${displayMoney(dcaAnalysisPnl, 2)}`
+                      : '—'}
+                  </b>
+                  <small>
+                    {dcaAnalysisMarket
+                      ? `${dcaAnalysisReturn >= 0 ? '+' : ''}${dcaAnalysisReturn.toFixed(2)}%`
+                      : '暂无行情'}
+                  </small>
+                </div>
+              </div>
+              <div className="dca-performance-cost">
+                <span>真实现金成本</span>
+                <strong>{displayMoney(dcaAnalysisCost, 2)}</strong>
+              </div>
+              <div className="dca-allocation-layout">
+                <div className="dca-cost-chart-wrap">
+                  <div className="dca-cost-chart">
+                    {dcaCostChartData.length ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={displayedDcaCostChartData}
+                            dataKey="value"
+                            nameKey="name"
+                            innerRadius={58}
+                            outerRadius={82}
+                            paddingAngle={2}
+                            stroke="none"
+                            isAnimationActive={false}
+                            activeShape={false}
+                          >
+                            {displayedDcaCostChartData.map((item) => (
+                              <Cell
+                                key={item.name}
+                                fill={item.color}
+                                stroke="none"
+                              />
+                            ))}
+                          </Pie>
+                          <Tooltip
+                            formatter={(value: number) => money(value, 2)}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="dca-chart-empty">
+                        导入交易记录后显示成本构成
+                      </div>
+                    )}
+                  </div>
+                  {dcaCostChartData.length ? (
+                    <div className="dca-chart-center">
+                      <span>已显示</span>
+                      <strong>{displayMoney(displayedDcaCost, 0)}</strong>
+                    </div>
+                  ) : null}
+                </div>
+                <div className="dca-cost-legend" aria-label="定投标的显示控制">
+                  {dcaCostChartData.map((item) => {
+                    const excluded = excludedDcaSymbols.has(item.name);
+                    const share =
+                      !excluded && displayedDcaCost
+                        ? (item.value / displayedDcaCost) * 100
+                        : 0;
+                    return (
+                      <button
+                        key={item.name}
+                        className={excluded ? 'excluded' : undefined}
+                        aria-label={`${excluded ? '显示' : '隐藏'}${item.name}`}
+                        aria-pressed={!excluded}
+                        onClick={() =>
+                          setExcludedDcaSymbols((current) => {
+                            const next = new Set(current);
+                            if (next.has(item.name)) next.delete(item.name);
+                            else next.add(item.name);
+                            return next;
+                          })
+                        }
+                      >
+                        <i style={{ background: item.color }} />
+                        <span>{item.name}</span>
+                        <strong>
+                          {excluded ? '已隐藏' : `${share.toFixed(1)}%`}
+                        </strong>
+                        <small>{displayMoney(item.value, 0)}</small>
+                      </button>
+                    );
+                  })}
+                  {!dcaCostChartData.length ? (
+                    <div className="dca-legend-empty">暂无持仓成本</div>
+                  ) : null}
+                </div>
+              </div>
+              <div className="dca-included-note">
+                <span>点击标的可切换圆环显示</span>
+                <strong>
+                  {displayedDcaCostChartData.length}/{dcaCostChartData.length}{' '}
+                  个标的
+                </strong>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <section className="dca-lower-grid">
+          <article className="panel dca-history dca-transactions-panel">
+            <div className="panel-head">
+              <div>
+                <p>月度流水</p>
+                <h2>{Number(dcaMonth.slice(5))}月定投交易记录</h2>
+              </div>
+              <span className="dca-note">
+                {dcaMonthTransactions.length} 条相关记录
+              </span>
+            </div>
+            <div className="table-scroll dca-transactions-table">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{dcaSortHead('Date', '日期')}</TableHead>
+                    <TableHead>{dcaSortHead('Action', '操作')}</TableHead>
+                    <TableHead>{dcaSortHead('Symbol', '代码')}</TableHead>
+                    <TableHead>
+                      {dcaSortHead('Description', '证券名称')}
+                    </TableHead>
+                    <TableHead className="text-right">
+                      {dcaSortHead('Quantity', '数量')}
+                    </TableHead>
+                    <TableHead className="text-right">
+                      {dcaSortHead('Price', '成交价')}
+                    </TableHead>
+                    <TableHead className="text-right">
+                      {dcaSortHead('Fees & Comm', '手续费')}
+                    </TableHead>
+                    <TableHead className="text-right">
+                      {dcaSortHead('Amount', '交易金额')}
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {dcaMonthTransactions.map((row, index) => (
+                    <TableRow
+                      key={`${transactionFingerprint(row)}-${index}`}
+                      tabIndex={0}
+                      role="button"
+                      className="dca-current-month-row"
+                      onClick={() => setSelected(row)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          setSelected(row);
+                        }
+                      }}
+                    >
+                      <TableCell className="date-cell">{row.Date}</TableCell>
+                      <TableCell>
+                        <Badge
+                          className={`action-badge ${actionKind(row.Action)}`}
+                        >
+                          {ACTION_LABELS[row.Action] ?? row.Action}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="ticker">{row.Symbol}</TableCell>
+                      <TableCell className="description-cell">
+                        {empty(row.Description)}
+                      </TableCell>
+                      <TableCell className="text-right mono">
+                        {amountsMasked && row.Quantity
+                          ? MASKED_VALUE
+                          : empty(row.Quantity)}
+                      </TableCell>
+                      <TableCell className="text-right mono">
+                        {displayRawMoney(row.Price)}
+                      </TableCell>
+                      <TableCell className="text-right mono">
+                        {displayRawMoney(row['Fees & Comm'])}
+                      </TableCell>
+                      <TableCell
+                        className={`text-right mono amount ${numberFrom(row.Amount) >= 0 ? 'pos' : 'neg'}`}
+                      >
+                        {displayRawMoney(row.Amount)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            {!dcaMonthTransactions.length && (
+              <div className="empty-state">当月没有定投标的相关交易记录</div>
+            )}
+          </article>
+        </section>
+
+        <section className="panel table-panel dca-all-transactions-panel">
+          <div className="panel-head table-title">
+            <div>
+              <p>完整流水</p>
+              <h2>全部定投交易记录</h2>
+            </div>
+            <span className="dca-note">{dcaPlanSymbols.join('、')}</span>
+          </div>
+          <div className="table-scroll">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{dcaSortHead('Date', '日期')}</TableHead>
+                  <TableHead>{dcaSortHead('Action', '操作')}</TableHead>
+                  <TableHead>{dcaSortHead('Symbol', '代码')}</TableHead>
+                  <TableHead>
+                    {dcaSortHead('Description', '证券名称')}
+                  </TableHead>
+                  <TableHead className="text-right">
+                    {dcaSortHead('Quantity', '数量')}
+                  </TableHead>
+                  <TableHead className="text-right">
+                    {dcaSortHead('Price', '成交价')}
+                  </TableHead>
+                  <TableHead className="text-right">
+                    {dcaSortHead('Fees & Comm', '手续费')}
+                  </TableHead>
+                  <TableHead className="text-right">
+                    {dcaSortHead('Amount', '交易金额')}
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {visibleDcaTransactions.map((row, index) => (
+                  <TableRow
+                    key={`${transactionFingerprint(row)}-all-${index}`}
+                    tabIndex={0}
+                    role="button"
+                    onClick={() => setSelected(row)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ')
+                        setSelected(row);
+                    }}
+                  >
+                    <TableCell className="date-cell">{row.Date}</TableCell>
+                    <TableCell>
+                      <Badge
+                        className={`action-badge ${actionKind(row.Action)}`}
+                      >
+                        {ACTION_LABELS[row.Action] ?? row.Action}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="ticker">{row.Symbol}</TableCell>
+                    <TableCell className="description-cell">
+                      {empty(row.Description)}
+                    </TableCell>
+                    <TableCell className="text-right mono">
+                      {amountsMasked && row.Quantity
+                        ? MASKED_VALUE
+                        : empty(row.Quantity)}
+                    </TableCell>
+                    <TableCell className="text-right mono">
+                      {displayRawMoney(row.Price)}
+                    </TableCell>
+                    <TableCell className="text-right mono">
+                      {displayRawMoney(row['Fees & Comm'])}
+                    </TableCell>
+                    <TableCell
+                      className={`text-right mono amount ${numberFrom(row.Amount) >= 0 ? 'pos' : 'neg'}`}
+                    >
+                      {displayRawMoney(row.Amount)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          {!visibleDcaTransactions.length && (
+            <div className="empty-state">没有定投标的相关交易记录</div>
+          )}
+          <div className="table-footer">
+            <span>
+              显示{' '}
+              {dcaTransactions.length
+                ? (currentDcaTransactionPage - 1) * PAGE_SIZE + 1
+                : 0}
+              —
+              {Math.min(
+                currentDcaTransactionPage * PAGE_SIZE,
+                dcaTransactions.length,
+              )}{' '}
+              / {dcaTransactions.length} 条
+            </span>
+            <Pagination>
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious
+                    href="#"
+                    text="上一页"
+                    aria-disabled={currentDcaTransactionPage <= 1}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setDcaTransactionPage((value) => Math.max(1, value - 1));
+                    }}
+                  />
+                </PaginationItem>
+                <PaginationItem>
+                  <span className="page-count">
+                    {currentDcaTransactionPage} / {dcaTransactionTotalPages}
+                  </span>
+                </PaginationItem>
+                <PaginationItem>
+                  <PaginationNext
+                    href="#"
+                    text="下一页"
+                    aria-disabled={
+                      currentDcaTransactionPage >= dcaTransactionTotalPages
+                    }
+                    onClick={(event) => {
+                      event.preventDefault();
+                      setDcaTransactionPage((value) =>
+                        Math.min(dcaTransactionTotalPages, value + 1),
+                      );
+                    }}
+                  />
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
+          </div>
+        </section>
+      </section>
+
+      <Dialog open={dcaSettingsOpen} onOpenChange={setDcaSettingsOpen}>
+        <DialogContent className="dca-settings-dialog">
+          <DialogHeader>
+            <DialogTitle>设置每月定投计划</DialogTitle>
+            <DialogDescription>
+              修改后，定投页的历史统计、持仓分析和流水会全部切换到新标的。第三组的两个防御标的共用一份额度。
+              停用计划不会删除已填写的代码和额度。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="dca-settings-list">
+            {dcaPlans.map((plan, index) => (
+              <div
+                className={`${
+                  plan.priority === 'secondary'
+                    ? 'dca-settings-secondary'
+                    : 'dca-settings-primary'
+                } ${plan.enabled === false ? 'inactive-plan' : ''}`}
+                key={index}
+              >
+                <span>
+                  <strong>
+                    {plan.priority === 'primary'
+                      ? `主定投 ${index + 1}`
+                      : '防御类'}
+                  </strong>
+                  <small>
+                    {plan.priority === 'primary' ? '主定投' : '防御类共享额度'}
+                  </small>
+                  <label className="dca-plan-enabled">
+                    <Switch
+                      checked={plan.enabled !== false}
+                      onCheckedChange={(checked) =>
+                        setDcaPlans((current) =>
+                          current.map((item, itemIndex) =>
+                            itemIndex === index
+                              ? { ...item, enabled: checked }
+                              : item,
+                          ),
+                        )
+                      }
+                    />
+                    <span>
+                      {plan.enabled === false
+                        ? '已停用'
+                        : [plan.symbol, plan.secondarySymbol].some(Boolean)
+                          ? '已启用'
+                          : '未填写标的'}
+                    </span>
+                  </label>
+                </span>
+                <Label>
+                  <span>
+                    {plan.priority === 'secondary' ? '防御标的 1' : '标的代码'}
+                  </span>
+                  <Input
+                    value={plan.symbol}
+                    maxLength={12}
+                    onChange={(event) =>
+                      setDcaPlans((current) =>
+                        current.map((item, itemIndex) =>
+                          itemIndex === index
+                            ? {
+                                ...item,
+                                symbol: event.target.value.trim().toUpperCase(),
+                              }
+                            : item,
+                        ),
+                      )
+                    }
+                  />
+                </Label>
+                {plan.priority === 'secondary' ? (
+                  <Label>
+                    <span>防御标的 2</span>
+                    <Input
+                      value={plan.secondarySymbol ?? ''}
+                      maxLength={12}
+                      onChange={(event) =>
+                        setDcaPlans((current) =>
+                          current.map((item, itemIndex) =>
+                            itemIndex === index
+                              ? {
+                                  ...item,
+                                  secondarySymbol: event.target.value
+                                    .trim()
+                                    .toUpperCase(),
+                                }
+                              : item,
+                          ),
+                        )
+                      }
+                    />
+                  </Label>
+                ) : null}
+                <Label>
+                  <span>每月额度</span>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="50"
+                    value={plan.monthlyTarget}
+                    onChange={(event) =>
+                      setDcaPlans((current) =>
+                        current.map((item, itemIndex) =>
+                          itemIndex === index
+                            ? {
+                                ...item,
+                                monthlyTarget: Number(event.target.value),
+                              }
+                            : item,
+                        ),
+                      )
+                    }
+                  />
+                </Label>
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDcaSettingsOpen(false)}>
+              取消
+            </Button>
+            <Button onClick={saveDcaPlans}>保存计划</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <section
+        className={`content ${activeView === 'portfolio' ? '' : 'view-hidden'}`}
+      >
         <div
           className="data-row drop-zone"
           onDragOver={(event) => event.preventDefault()}
@@ -1061,6 +2973,9 @@ export default function Home() {
             <span className="status-dot" />
             <strong>{fileName}</strong>
             <span>{data.BrokerageTransactions.length} 条原始记录</span>
+            <span className="data-meta-pill">
+              累计手续费 {displayMoney(allStats.fees, 2)}
+            </span>
           </div>
           <span>拖入或上传仅临时查看；“更新 JSON”才会合并并保存</span>
         </div>
@@ -1076,163 +2991,77 @@ export default function Home() {
             </button>
           </div>
         )}
-        <section className="filter-strip" aria-label="数据筛选">
-          <label>
-            <span>开始日期</span>
-            <Input
-              type="date"
-              value={startDate}
-              onChange={(e) => {
-                setStartDate(e.target.value);
-                setPage(1);
-              }}
-            />
-          </label>
-          <label>
-            <span>结束日期</span>
-            <Input
-              type="date"
-              value={endDate}
-              onChange={(e) => {
-                setEndDate(e.target.value);
-                setPage(1);
-              }}
-            />
-          </label>
-          <label>
-            <span>操作类型</span>
-            <Select
-              value={action}
-              onValueChange={(v) => {
-                setAction(v ?? 'all');
-                setPage(1);
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部类型</SelectItem>
-                <SelectItem value="Buy">买入</SelectItem>
-                <SelectItem value="Sell">卖出</SelectItem>
-                <SelectItem value="inflow">入金</SelectItem>
-              </SelectContent>
-            </Select>
-          </label>
-          <label>
-            <span>证券代码</span>
-            <Select
-              value={symbol}
-              onValueChange={(v) => {
-                setSymbol(v ?? 'all');
-                setPage(1);
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部证券</SelectItem>
-                {allSymbols.map((item) => (
-                  <SelectItem key={item} value={item}>
-                    {item}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </label>
-          <label className="search-field">
-            <span>关键词</span>
-            <div>
-              <Search size={15} />
-              <Input
-                value={query}
-                placeholder="代码、名称或操作"
-                onChange={(e) => {
-                  setQuery(e.target.value);
-                  setPage(1);
-                }}
-              />
-            </div>
-          </label>
-          <Button variant="ghost" onClick={resetFilters}>
-            重置筛选
-          </Button>
-        </section>
-        <section className="kpi-grid">
-          {[
-            [
-              '交易记录',
-              filtered.length.toLocaleString('zh-CN'),
-              `${allStats.symbols} 个证券标的`,
-              WalletCards,
-              'neutral',
-            ],
-            [
-              '总入金',
-              displayMoney(allStats.inflow),
-              '全文件：汇款 + MoneyLink',
-              CircleDollarSign,
-              'purple',
-            ],
-            [
-              '买入总额',
-              displayMoney(stats.buyAmount),
-              `${filtered.filter((r) => r.Action === 'Buy').length} 笔买入`,
-              ArrowDownToLine,
-              'blue',
-            ],
-            [
-              '卖出总额',
-              displayMoney(stats.sellAmount),
-              `${filtered.filter((r) => r.Action === 'Sell').length} 笔卖出`,
-              ArrowUpFromLine,
-              'green',
-            ],
-            [
-              '净资金流',
-              displayMoney(stats.net),
-              `资金转入 ${displayMoney(stats.inflow)}`,
-              AreaChart,
-              'purple',
-            ],
-            [
-              '手续费与佣金',
-              displayMoney(stats.fees, 2),
-              `占证券成交额 ${stats.buyAmount + stats.sellAmount ? ((stats.fees / (stats.buyAmount + stats.sellAmount)) * 100).toFixed(4) : '0.0000'}%`,
-              CircleDollarSign,
-              'orange',
-            ],
-          ].map(([label, value, note, Icon, tone]) => (
-            <article className={`kpi ${tone}`} key={label as string}>
-              <div>
-                <span>{label as string}</span>
-                <Icon size={17} />
-              </div>
-              <strong>{value as string}</strong>
-              <p>{note as string}</p>
-            </article>
-          ))}
-        </section>
         <section className="panel holdings-panel">
-          <div className="panel-head holdings-head">
-            <div>
-              <p>当前持仓看板</p>
-              <h2>当前持仓与真实现金成本</h2>
+          <div className="portfolio-surface">
+            <div className="portfolio-overview">
+              <div className="portfolio-overview-main">
+                <p>PORTFOLIO · USD</p>
+                <span>当前总资产</span>
+                <strong>{displayMoney(totalAssets, 2)}</strong>
+                <div
+                  className={`portfolio-day-change ${marketSummary.dayChange >= 0 ? 'pos' : 'neg'}`}
+                >
+                  {marketSummary.quotedCount ? (
+                    <>
+                      <span>
+                        {marketSummary.dayChange >= 0 ? '+' : ''}
+                        {displayMoney(marketSummary.dayChange, 2)}
+                      </span>
+                      <b>
+                        {marketDayChangePercent >= 0 ? '+' : ''}
+                        {marketDayChangePercent.toFixed(2)}%
+                      </b>
+                      <small>今日</small>
+                    </>
+                  ) : (
+                    <small>点击更新获取最新行情</small>
+                  )}
+                </div>
+              </div>
+              <div className="portfolio-overview-actions">
+                <Button
+                  onClick={refreshQuotes}
+                  disabled={!holdings.positions.length || quotesLoading}
+                >
+                  <RefreshCcw className={quotesLoading ? 'is-spinning' : ''} />
+                  {quotesLoading ? '更新中…' : '更新行情'}
+                </Button>
+                <small>
+                  行情覆盖 {marketSummary.quotedCount}/
+                  {holdings.positions.length}
+                  {' · '}
+                  {quotesUpdatedAt}
+                  {quoteRefreshStatus ? ` · ${quoteRefreshStatus}` : ''}
+                  {quotesError ? ` · ${quotesError}` : ''}
+                </small>
+              </div>
             </div>
-            <div className="holdings-summary">
-              <span>
-                <small>真实现金成本</small>
+            <div className="portfolio-metrics">
+              <div>
+                <span>当前持仓市值</span>
+                <strong>
+                  {marketSummary.quotedCount
+                    ? displayMoney(marketSummary.marketValue, 2)
+                    : '—'}
+                </strong>
+              </div>
+              <div>
+                <span>账面现金</span>
+                <strong>{displayMoney(ledgerCash, 2)}</strong>
+              </div>
+              <div>
+                <span>真实现金成本</span>
                 <strong>{displayMoney(holdings.totalCost, 2)}</strong>
-              </span>
-              <span>
-                <small>持仓标的</small>
-                <strong>{holdings.positions.length}</strong>
-              </span>
-              <span>
-                <small>产业主题</small>
-                <strong>{industryData.length}</strong>
-              </span>
+              </div>
+              <div>
+                <span>账户总盈亏</span>
+                <strong className={totalPnl >= 0 ? 'pos' : 'neg'}>
+                  {holdings.positions.length > 0 &&
+                  marketSummary.quotedCount === holdings.positions.length
+                    ? `${displayMoney(totalPnl, 2)} · ${totalPnlPercent >= 0 ? '+' : ''}${totalPnlPercent.toFixed(2)}%`
+                    : '—'}
+                </strong>
+              </div>
             </div>
           </div>
           {typedHoldings.length ? (
@@ -1244,6 +3073,8 @@ export default function Home() {
                     <col className="holding-col-quantity" />
                     <col className="holding-col-average" />
                     <col className="holding-col-cost" />
+                    <col className="holding-col-price" />
+                    <col className="holding-col-market" />
                     <col className="holding-col-share" />
                   </colgroup>
                   <thead>
@@ -1252,6 +3083,8 @@ export default function Home() {
                       <th className="numeric">持仓数量</th>
                       <th className="numeric">现金均价</th>
                       <th className="numeric">真实现金成本</th>
+                      <th className="numeric">现价 / 今日</th>
+                      <th className="numeric">市值 / 浮盈亏</th>
                       <th>成本占比</th>
                     </tr>
                   </thead>
@@ -1260,13 +3093,16 @@ export default function Home() {
                       const share = holdings.totalCost
                         ? (item.cost / holdings.totalCost) * 100
                         : 0;
+                      const quote = quotes[item.symbol];
+                      const marketValue = quote
+                        ? item.quantity * quote.current
+                        : 0;
+                      const unrealizedPnl = quote ? marketValue - item.cost : 0;
                       return (
                         <tr key={item.symbol}>
                           <td>
-                            <div className="holding-symbol-line">
-                              <strong>{item.symbol}</strong>
-                              <Badge
-                                className="asset-type-badge"
+                            <div className="holding-identity">
+                              <i
                                 style={
                                   {
                                     '--asset-color':
@@ -1274,10 +3110,26 @@ export default function Home() {
                                   } as React.CSSProperties
                                 }
                               >
-                                {item.industryTheme}
-                              </Badge>
+                                {item.symbol.slice(0, 2)}
+                              </i>
+                              <div>
+                                <div className="holding-symbol-line">
+                                  <strong>{item.symbol}</strong>
+                                  <Badge
+                                    className="asset-type-badge"
+                                    style={
+                                      {
+                                        '--asset-color':
+                                          THEME_COLORS[item.industryTheme],
+                                      } as React.CSSProperties
+                                    }
+                                  >
+                                    {item.industryTheme}
+                                  </Badge>
+                                </div>
+                                <span>{item.description}</span>
+                              </div>
                             </div>
-                            <span>{item.description}</span>
                           </td>
                           <td className="numeric mono">
                             {amountsMasked
@@ -1291,6 +3143,40 @@ export default function Home() {
                           </td>
                           <td className="numeric mono cost-cell">
                             {displayMoney(item.cost, 2)}
+                          </td>
+                          <td className="numeric mono">
+                            {quote ? (
+                              <div className="market-cell">
+                                <strong>
+                                  {displayMoney(quote.current, 2)}
+                                </strong>
+                                <small
+                                  className={
+                                    quote.changePercent >= 0 ? 'pos' : 'neg'
+                                  }
+                                >
+                                  {quote.changePercent >= 0 ? '+' : ''}
+                                  {quote.changePercent.toFixed(2)}%
+                                </small>
+                              </div>
+                            ) : (
+                              '—'
+                            )}
+                          </td>
+                          <td className="numeric mono">
+                            {quote ? (
+                              <div className="market-cell">
+                                <strong>{displayMoney(marketValue, 2)}</strong>
+                                <small
+                                  className={unrealizedPnl >= 0 ? 'pos' : 'neg'}
+                                >
+                                  {unrealizedPnl >= 0 ? '+' : ''}
+                                  {displayMoney(unrealizedPnl, 2)}
+                                </small>
+                              </div>
+                            ) : (
+                              '—'
+                            )}
                           </td>
                           <td>
                             <div className="share-cell">
@@ -1472,6 +3358,249 @@ export default function Home() {
               : ''}
           </p>
         </section>
+        <section className="panel pair-panel">
+          <div className="panel-head pair-panel-head">
+            <div>
+              <p>相对强弱</p>
+              <h2>Bo Pair Indicator</h2>
+            </div>
+            <div className="pair-panel-actions">
+              <div className="pair-signal-legend">
+                <span>
+                  ROC {PAIR_LENGTH} · 确认线 0 · 过滤幅度 {PAIR_ARM_THRESHOLD}
+                </span>
+                <small className="pair-signal-up">
+                  <i className="up" />
+                  向上确认
+                </small>
+                <small className="pair-signal-down">
+                  <i className="down" />
+                  向下确认
+                </small>
+              </div>
+              <Button onClick={refreshPairIndicators} disabled={pairLoading}>
+                <RefreshCcw className={pairLoading ? 'is-spinning' : ''} />
+                {pairLoading ? '更新中…' : '更新指标'}
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      aria-label="Bo Pair 更多操作"
+                      title="更多操作"
+                    >
+                      <MoreHorizontal />
+                    </Button>
+                  }
+                />
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    variant="destructive"
+                    disabled={!pairIndicators.length}
+                    onClick={clearPairIndicatorCache}
+                  >
+                    <Trash2 /> 清空指标缓存
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+          <div className="pair-rotation-note">
+            <span className="pair-signal-down">
+              <b>向下确认</b>：资金进攻，偏向科技股
+            </span>
+            <span className="pair-signal-up">
+              <b>向上确认</b>：资金防守，偏向质量股 / 价值股
+            </span>
+          </div>
+          {pairIndicators.length ? (
+            <div className="pair-grid">
+              {PAIR_SYMBOLS.map((symbol) => {
+                const indicator = pairIndicators.find(
+                  (item) => item.symbol === symbol,
+                );
+                if (!indicator) {
+                  return (
+                    <article className="pair-card pair-card-empty" key={symbol}>
+                      <strong>{symbol} / QQQ</strong>
+                      <span>历史行情不可用</span>
+                    </article>
+                  );
+                }
+                return (
+                  <article className="pair-card" key={symbol}>
+                    <div className="pair-card-head">
+                      <div>
+                        <strong>{symbol} / QQQ</strong>
+                        <small>相对价格 ROC</small>
+                      </div>
+                      <b className={indicator.value >= 0 ? 'pos' : 'neg'}>
+                        {indicator.value >= 0 ? '+' : ''}
+                        {indicator.value.toFixed(2)}%
+                      </b>
+                    </div>
+                    <div className="pair-chart">
+                      <ResponsiveContainer
+                        width="100%"
+                        height="100%"
+                        minWidth={0}
+                      >
+                        <LineChart data={indicator.points}>
+                          <ReferenceLine
+                            y={0}
+                            stroke="var(--border)"
+                            strokeDasharray="4 4"
+                          />
+                          <Tooltip
+                            labelFormatter={(label) => String(label)}
+                            formatter={(value) => [
+                              `${Number(value).toFixed(2)}%`,
+                              'ROC',
+                            ]}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="value"
+                            stroke="var(--primary)"
+                            strokeWidth={2}
+                            dot={<PairSignalDot />}
+                            isAnimationActive={false}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="pair-status-row">
+                      <span
+                        className={
+                          indicator.armUp && !indicator.armDown
+                            ? 'pair-signal-up'
+                            : indicator.armDown && !indicator.armUp
+                              ? 'pair-signal-down'
+                              : undefined
+                        }
+                      >
+                        {indicator.armUp && indicator.armDown
+                          ? '双向信号已武装'
+                          : indicator.armUp
+                            ? '向上信号已武装'
+                            : indicator.armDown
+                              ? '向下信号已武装'
+                              : '尚未武装'}
+                      </span>
+                      <small className="pair-status-reason">
+                        {indicator.armUp && indicator.armDown
+                          ? '指标已先后进入 ±1% 区域；下一次有效穿越零轴将触发对应方向。'
+                          : indicator.armUp
+                            ? '指标曾进入 -1% 以下，现等待由下向上穿越零轴。'
+                            : indicator.armDown
+                              ? '指标曾进入 +1% 以上，现等待由上向下穿越零轴。'
+                              : '指标需先远离零轴达到 -1% 或 +1%，才具备下一次反向确认资格。'}
+                      </small>
+                      <small>
+                        最近信号：
+                        {indicator.lastSignal ? (
+                          <>
+                            <b
+                              className={
+                                indicator.lastSignal === 'up'
+                                  ? 'pair-signal-up'
+                                  : 'pair-signal-down'
+                              }
+                            >
+                              {indicator.lastSignal === 'up'
+                                ? '向上确认'
+                                : '向下确认'}
+                            </b>{' '}
+                            · {indicator.lastSignalDate}
+                          </>
+                        ) : (
+                          '暂无'
+                        )}
+                      </small>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="pair-empty">
+              点击“更新指标”获取四组配对的历史日线并计算确认信号。
+            </div>
+          )}
+          <p className="definition-note pair-update-note">
+            {pairError ? `${pairError} · ` : ''}最近更新：{pairUpdatedAt}
+          </p>
+        </section>
+        <section className="panel income-panel">
+          <div className="panel-head">
+            <div>
+              <p>收益归因</p>
+              <h2>收益来源拆解</h2>
+            </div>
+            <span className="panel-note">基于当前累计交易记录</span>
+          </div>
+          <div className="income-breakdown-grid">
+            <article className="income-total">
+              <span>账户总盈亏</span>
+              <strong className={totalPnl >= 0 ? 'pos' : 'neg'}>
+                {holdings.positions.length > 0 &&
+                marketSummary.quotedCount === holdings.positions.length
+                  ? displayMoney(totalPnl, 2)
+                  : '—'}
+              </strong>
+              <small>总资产减记录内净入金</small>
+            </article>
+            <article>
+              <span>浮动盈亏</span>
+              <strong
+                className={marketSummary.unrealizedPnl >= 0 ? 'pos' : 'neg'}
+              >
+                {holdings.positions.length > 0 &&
+                marketSummary.quotedCount === holdings.positions.length
+                  ? displayMoney(marketSummary.unrealizedPnl, 2)
+                  : '—'}
+              </strong>
+              <small>当前市值与真实现金成本之差</small>
+            </article>
+            <article>
+              <span>FIFO 已实现盈亏</span>
+              <strong
+                className={holdings.totalRealizedPnl >= 0 ? 'pos' : 'neg'}
+              >
+                {displayMoney(holdings.totalRealizedPnl, 2)}
+              </strong>
+              <small>卖出回款减匹配批次成本</small>
+            </article>
+            <article>
+              <span>分红收入</span>
+              <strong className={cashReturns.dividends >= 0 ? 'pos' : 'neg'}>
+                {displayMoney(cashReturns.dividends, 2)}
+              </strong>
+              <small>自动识别含 Dividend 的流水</small>
+            </article>
+            <article>
+              <span>利息收入</span>
+              <strong className={cashReturns.interest >= 0 ? 'pos' : 'neg'}>
+                {displayMoney(cashReturns.interest, 2)}
+              </strong>
+              <small>自动识别含 Interest 的流水</small>
+            </article>
+            <article>
+              <span>手续费</span>
+              <strong className={allStats.fees ? 'neg' : ''}>
+                {displayMoney(-Math.abs(allStats.fees), 2)}
+              </strong>
+              <small>仅作成本观察，不重复计入合计</small>
+            </article>
+          </div>
+          <p className="definition-note">
+            分红、利息尚未产生时显示为
+            $0.00；账户总盈亏已经包含这些现金收益。各项不强制相加，手续费可能已包含在成交金额及
+            FIFO 成本中。
+          </p>
+        </section>
         <section className="panel realized-panel">
           <div className="panel-head holdings-head">
             <div>
@@ -1481,7 +3610,9 @@ export default function Home() {
             <div className="holdings-summary realized-summary">
               <span>
                 <small>卖出回款</small>
-                <strong>{displayMoney(holdings.totalRealizedProceeds, 2)}</strong>
+                <strong>
+                  {displayMoney(holdings.totalRealizedProceeds, 2)}
+                </strong>
               </span>
               <span>
                 <small>已实现现金盈亏</small>
@@ -1500,63 +3631,57 @@ export default function Home() {
           {holdings.realizedPositions.length ? (
             <div className="realized-layout">
               <div className="realized-chart">
-                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                  <BarChart
-                    data={holdings.realizedPositions.slice(0, 8)}
-                    layout="vertical"
-                    margin={{ left: 6, right: 25, top: 12, bottom: 8 }}
-                  >
-                    <CartesianGrid
-                      horizontal={false}
-                      stroke="var(--chart-grid)"
-                    />
-                    <XAxis
-                      type="number"
-                      tickFormatter={(value) =>
-                        amountsMasked ? MASKED_VALUE : compactMoney(value)
-                      }
-                      tick={{ fill: 'var(--muted-foreground)', fontSize: 10 }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      type="category"
-                      dataKey="symbol"
-                      width={48}
-                      tick={{
-                        fill: 'var(--foreground)',
-                        fontSize: 11,
-                        fontWeight: 700,
-                      }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <Tooltip
-                      formatter={(v) => displayMoney(Number(v), 2)}
-                    />
-                    <Bar
-                      dataKey="pnl"
-                      name="已实现现金盈亏"
-                      radius={[0, 4, 4, 0]}
-                    >
-                      {holdings.realizedPositions.slice(0, 8).map((item) => (
-                        <Cell
-                          key={item.symbol}
-                          fill={item.pnl >= 0 ? COLORS.sell : '#ec7d7d'}
+                <div className="realized-chart-head">
+                  <div>
+                    <span>盈亏贡献</span>
+                    <strong>已平仓标的排行</strong>
+                  </div>
+                  <small>按绝对盈亏排序</small>
+                </div>
+                <div className="realized-performance-list">
+                  {holdings.realizedPositions.slice(0, 8).map((item) => (
+                    <div className="realized-performance-row" key={item.symbol}>
+                      <div className="realized-performance-label">
+                        <i
+                          style={{
+                            background:
+                              THEME_COLORS[
+                                classifyIndustry(item.symbol, item.description)
+                              ],
+                          }}
                         />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+                        <strong>{item.symbol}</strong>
+                      </div>
+                      <div className="realized-performance-value">
+                        <strong className={item.pnl >= 0 ? 'pos' : 'neg'}>
+                          {item.pnl >= 0 ? '+' : ''}
+                          {displayMoney(item.pnl, 2)}
+                        </strong>
+                        <small className={item.returnRate >= 0 ? 'pos' : 'neg'}>
+                          {item.returnRate >= 0 ? '+' : ''}
+                          {(item.returnRate * 100).toFixed(1)}%
+                        </small>
+                      </div>
+                      <span className="realized-performance-track">
+                        <i
+                          className={item.pnl >= 0 ? 'gain' : 'loss'}
+                          style={{
+                            width: `${Math.max(6, (Math.abs(item.pnl) / maxRealizedPnl) * 100)}%`,
+                          }}
+                        />
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
               <div className="realized-table-wrap">
                 <table className="realized-table">
                   <thead>
                     <tr>
                       <th>标的</th>
+                      <th className="numeric">买入价格</th>
+                      <th className="numeric">卖出价格</th>
                       <th className="numeric">卖出数量</th>
-                      <th className="numeric">卖出回款</th>
-                      <th className="numeric">匹配现金成本</th>
                       <th className="numeric">现金盈亏</th>
                       <th className="numeric">收益率</th>
                     </tr>
@@ -1571,17 +3696,39 @@ export default function Home() {
                           </span>
                         </td>
                         <td className="numeric mono">
+                          <div className="price-stack">
+                            <strong>
+                              {displayMoney(
+                                item.quantity
+                                  ? item.matchedCost / item.quantity
+                                  : 0,
+                                2,
+                              )}
+                            </strong>
+                            <small>
+                              总价 {displayMoney(item.matchedCost, 2)}
+                            </small>
+                          </div>
+                        </td>
+                        <td className="numeric mono">
+                          <div className="price-stack">
+                            <strong>
+                              {displayMoney(
+                                item.quantity
+                                  ? item.proceeds / item.quantity
+                                  : 0,
+                                2,
+                              )}
+                            </strong>
+                            <small>总价 {displayMoney(item.proceeds, 2)}</small>
+                          </div>
+                        </td>
+                        <td className="numeric mono">
                           {amountsMasked
                             ? MASKED_VALUE
                             : item.quantity.toLocaleString('en-US', {
                                 maximumFractionDigits: 4,
                               })}
-                        </td>
-                        <td className="numeric mono">
-                          {displayMoney(item.proceeds, 2)}
-                        </td>
-                        <td className="numeric mono">
-                          {displayMoney(item.matchedCost, 2)}
                         </td>
                         <td
                           className={`numeric mono ${item.pnl >= 0 ? 'pos' : 'neg'}`}
@@ -1608,80 +3755,190 @@ export default function Home() {
             wash sale 税务调整、额外税费和汇率影响，也不代表账户报税口径。
           </p>
         </section>
-        <section className="panel cashflow-panel">
-          <div className="panel-head">
-            <div>
-              <p>资金流趋势</p>
-              <h2>每日资金活动</h2>
-            </div>
-            <div className="mini-legend">
-              <span>
-                <i className="buy" />
-                买入支出
-              </span>
-              <span>
-                <i className="sell" />
-                卖出
-              </span>
-              <span>
-                <i className="transfer" />
-                资金转入
-              </span>
-              <span>
-                <i className="line" />
-                累计净现金流
-              </span>
-            </div>
+        <section className="panel manual-entry-panel">
+          <div>
+            <p>交易维护</p>
+            <h2>手动维护单笔交易</h2>
+            <span>支持新增、修改、删除，以及撤销上一次手动操作。</span>
           </div>
-          {daily.length ? (
-            <div className="chart-large">
-              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                <ComposedChart
-                  data={daily}
-                  margin={{ top: 16, right: 16, left: 0 }}
-                >
-                  <CartesianGrid
-                    strokeDasharray="3 5"
-                    vertical={false}
-                    stroke="var(--chart-grid)"
-                  />
-                  <XAxis
-                    dataKey="date"
-                    tickFormatter={(v) => v.slice(5).replace('-', '/')}
-                    tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    tickFormatter={(value) =>
-                      amountsMasked ? MASKED_VALUE : compactMoney(value)
-                    }
-                    tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <Tooltip content={<ChartTooltip masked={amountsMasked} />} />
-                  <Bar dataKey="buy" name="买入" fill={COLORS.buy} />
-                  <Bar dataKey="sell" name="卖出" fill={COLORS.sell} />
-                  <Bar
-                    dataKey="transfer"
-                    name="资金转入"
-                    fill={COLORS.transfer}
-                  />
-                  <Line
-                    dataKey="cumulative"
-                    name="累计净现金流"
-                    stroke="#b88b16"
-                    strokeWidth={2.2}
-                    dot={false}
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <div className="empty-state">当前筛选没有资金活动</div>
-          )}
+          <div className="manual-entry-actions">
+            <Button
+              variant="outline"
+              disabled={!canUndoTransaction}
+              onClick={undoLastTransactionChange}
+            >
+              <Undo2 />
+              撤销上次操作
+            </Button>
+            <Button onClick={openManualTransactionDialog}>
+              <Plus />
+              添加交易
+            </Button>
+          </div>
         </section>
+        <Dialog open={manualDialogOpen} onOpenChange={setManualDialogOpen}>
+          <DialogContent className="manual-dialog sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>
+                {editingTransaction ? '修改单笔交易' : '添加单笔交易'}
+              </DialogTitle>
+              <DialogDescription>
+                保存后会写入本地累计 JSON，并立即参与持仓、现金与 FIFO 计算。
+              </DialogDescription>
+            </DialogHeader>
+            <div className="manual-form-grid">
+              <Label>
+                <span>日期</span>
+                <Input
+                  type="date"
+                  value={manualTransaction.date}
+                  onChange={(event) =>
+                    setManualTransaction((current) => ({
+                      ...current,
+                      date: event.target.value,
+                    }))
+                  }
+                />
+              </Label>
+              <Label>
+                <span>操作类型</span>
+                <NativeSelect
+                  className="w-full"
+                  value={manualTransaction.action}
+                  onChange={(event) =>
+                    setManualTransaction((current) => ({
+                      ...current,
+                      action: event.target.value,
+                      amount: '',
+                    }))
+                  }
+                >
+                  <NativeSelectOption value="Buy">买入</NativeSelectOption>
+                  <NativeSelectOption value="Sell">卖出</NativeSelectOption>
+                  <NativeSelectOption value="Cash Dividend">
+                    分红
+                  </NativeSelectOption>
+                  <NativeSelectOption value="Interest">利息</NativeSelectOption>
+                  <NativeSelectOption value="Wire Received">
+                    汇款到账
+                  </NativeSelectOption>
+                  <NativeSelectOption value="MoneyLink Transfer">
+                    MoneyLink 转账
+                  </NativeSelectOption>
+                  <NativeSelectOption value="Other">其他</NativeSelectOption>
+                </NativeSelect>
+              </Label>
+              <Label>
+                <span>标的代码</span>
+                <Input
+                  placeholder="例如 QLD"
+                  value={manualTransaction.symbol}
+                  onChange={(event) =>
+                    setManualTransaction((current) => ({
+                      ...current,
+                      symbol: event.target.value.toUpperCase(),
+                    }))
+                  }
+                />
+              </Label>
+              <Label>
+                <span>说明</span>
+                <Input
+                  placeholder="可选"
+                  value={manualTransaction.description}
+                  onChange={(event) =>
+                    setManualTransaction((current) => ({
+                      ...current,
+                      description: event.target.value,
+                    }))
+                  }
+                />
+              </Label>
+              <Label>
+                <span>数量</span>
+                <Input
+                  type="number"
+                  min="0"
+                  step="any"
+                  placeholder="0"
+                  value={manualTransaction.quantity}
+                  onChange={(event) =>
+                    setManualTransaction((current) => ({
+                      ...current,
+                      quantity: event.target.value,
+                    }))
+                  }
+                />
+              </Label>
+              <Label>
+                <span>成交价</span>
+                <Input
+                  type="number"
+                  min="0"
+                  step="any"
+                  placeholder="USD"
+                  value={manualTransaction.price}
+                  onChange={(event) =>
+                    setManualTransaction((current) => ({
+                      ...current,
+                      price: event.target.value,
+                    }))
+                  }
+                />
+              </Label>
+              <Label>
+                <span>手续费</span>
+                <Input
+                  type="number"
+                  min="0"
+                  step="any"
+                  placeholder="0.00"
+                  value={manualTransaction.fees}
+                  onChange={(event) =>
+                    setManualTransaction((current) => ({
+                      ...current,
+                      fees: event.target.value,
+                    }))
+                  }
+                />
+              </Label>
+              <Label>
+                <span>交易金额</span>
+                <Input
+                  type="number"
+                  step="any"
+                  placeholder={
+                    manualTransaction.action === 'Buy' ||
+                    manualTransaction.action === 'Sell'
+                      ? '留空则按数量和价格计算'
+                      : '收入填正数，支出填负数'
+                  }
+                  value={manualTransaction.amount}
+                  onChange={(event) =>
+                    setManualTransaction((current) => ({
+                      ...current,
+                      amount: event.target.value,
+                    }))
+                  }
+                />
+              </Label>
+            </div>
+            {manualError ? (
+              <p className="manual-form-error">{manualError}</p>
+            ) : null}
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setManualDialogOpen(false)}
+              >
+                取消
+              </Button>
+              <Button onClick={saveManualTransaction}>
+                {editingTransaction ? '保存修改' : '保存交易'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
         <section className="panel table-panel" id="transactions">
           <div className="panel-head table-title">
             <div>
@@ -1822,22 +4079,82 @@ export default function Home() {
             <SheetDescription>保留嘉信导出文件中的原始字段</SheetDescription>
           </SheetHeader>
           {selected && (
-            <div className="detail-list">
-              {Object.entries(selected).map(([key, value]) => (
-                <div key={key}>
-                  <span>{key}</span>
-                  <strong>
-                    {amountsMasked &&
-                    ['Quantity', 'Price', 'Fees & Comm', 'Amount'].includes(key)
-                      ? MASKED_VALUE
-                      : value || '—'}
-                  </strong>
-                </div>
-              ))}
-            </div>
+            <>
+              <div className="detail-list">
+                {Object.entries(selected).map(([key, value]) => (
+                  <div key={key}>
+                    <span>{key}</span>
+                    <strong>
+                      {amountsMasked &&
+                      ['Quantity', 'Price', 'Fees & Comm', 'Amount'].includes(
+                        key,
+                      )
+                        ? MASKED_VALUE
+                        : value || '—'}
+                    </strong>
+                  </div>
+                ))}
+              </div>
+              <div className="detail-actions">
+                <Button
+                  variant="outline"
+                  disabled={
+                    !maintainedDataRef.current.BrokerageTransactions.includes(
+                      selected,
+                    )
+                  }
+                  onClick={openEditTransactionDialog}
+                >
+                  修改这条交易
+                </Button>
+                <Button
+                  variant="destructive"
+                  disabled={
+                    !maintainedDataRef.current.BrokerageTransactions.includes(
+                      selected,
+                    )
+                  }
+                  onClick={() => setDeleteTransactionOpen(true)}
+                >
+                  <Trash2 />
+                  删除这条交易
+                </Button>
+                {!maintainedDataRef.current.BrokerageTransactions.includes(
+                  selected,
+                ) ? (
+                  <small>临时查看的数据不能删除</small>
+                ) : null}
+              </div>
+            </>
           )}
         </SheetContent>
       </Sheet>
+      <AlertDialog
+        open={deleteTransactionOpen}
+        onOpenChange={setDeleteTransactionOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除这条交易？</AlertDialogTitle>
+            <AlertDialogDescription>
+              {selected
+                ? `${selected.Date} · ${ACTION_LABELS[selected.Action] ?? selected.Action} · ${selected.Symbol || selected.Description || '现金流水'}`
+                : '删除后会重新计算全部账户数据。'}
+              删除后会立即更新持仓、现金和 FIFO
+              结果；如需恢复，可重新导入包含该记录的 JSON。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={deleteSelectedTransaction}
+            >
+              确认删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   );
 }
