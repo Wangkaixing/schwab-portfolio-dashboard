@@ -6,17 +6,81 @@
 
 ## 如果出现信息不全或者其他问题，请在本地问问聪明的codex怎么解决。
 
-## 本地运行
+## 本地部署教程（macOS / Windows）
 
-需要 Node.js 22 或更高版本。
+> 按顺序照做即可，人工或 AI agent 都适用。整个过程只需要联网一次（下载依赖），之后本地离线可用。
+
+### 0. 前置条件：安装 Node.js 22+
+
+本项目要求 **Node.js 22.13.0 或更高版本**（推荐 22 LTS 或 24 LTS）。先确认版本：
+
+```bash
+node -v
+```
+
+若未安装或版本低于 22.13.0：
+
+- **macOS**：从 <https://nodejs.org> 下载 LTS 安装包，或用 Homebrew：`brew install node`
+- **Windows**：从 <https://nodejs.org> 下载 LTS 安装包（`.msi`），安装时勾选“Add to PATH”
+
+安装后重开终端，再次 `node -v` 确认。
+
+### 1. 获取代码
+
+```bash
+git clone https://github.com/Wangkaixing/schwab-portfolio-dashboard.git
+cd schwab-portfolio-dashboard
+```
+
+（若下载的是压缩包，解压后 `cd` 进入整个文件夹即可，不要移动或删减其中文件。）
+
+### 2. 安装依赖
 
 ```bash
 npm ci
+```
+
+- 这一步会下载一个较大的 Cloudflare `workerd` 运行时二进制（约 66 MB）。**网络较差时容易在此中断**。
+- 仓库已内置 `.npmrc`（自动加大重试次数与超时），大多数情况能自动重试成功。
+- 如果仍然失败（常见报错 `ECONNRESET` / `network aborted`），**直接重跑 `npm ci` 即可**。注意 `npm ci` 失败会回滚删除 `node_modules`，所以“看起来装了一半又没了”是正常现象，重跑就好。换用稳定网络或代理会更顺利。
+
+### 3. 配置环境变量文件
+
+```bash
+# macOS / Linux
 cp .env.example .env.local
+
+# Windows PowerShell
+copy .env.example .env.local
+```
+
+行情 API Key 是**可选**的：不填也能启动看板并导入、查看交易数据，只是“更新行情/更新指标”两个按钮拉不到数据。如何申请见下方 [行情接口配置](#行情接口配置)。
+
+### 4. 启动看板
+
+```bash
 npm run dev
 ```
 
-打开 `http://127.0.0.1:3000`，通过页面的“更新 JSON”导入嘉信交易记录。不同日期区间的文件会合并并去重。
+看到如下输出即为成功：
+
+```
+  ➜  Local:   http://127.0.0.1:3000/
+```
+
+浏览器打开 **<http://127.0.0.1:3000>**，通过页面的“更新 JSON”导入嘉信交易记录（不同日期区间的文件会自动合并并去重）。按 `Ctrl + C` 停止服务。
+
+macOS 用户也可直接双击项目里的 `直接启动看板-macOS.command`，Windows 用户双击 `启动看板-Windows.bat`，脚本会自动装依赖并打开浏览器。
+
+### 常见问题排查
+
+| 现象 | 原因 | 解决 |
+| --- | --- | --- |
+| `sh: vinext: command not found` | 依赖没装好或 `node_modules` 被回滚删除 | 重新执行 `npm ci`，成功后再 `npm run dev` |
+| `npm ci` 报 `ECONNRESET` / `network aborted` | 下载 workerd 二进制时网络中断 | 换稳定网络/代理后重跑 `npm ci`（仓库已配置自动重试） |
+| `Could not resolve './.openai/hosting.json'` | 该文件由部署工具生成，本地缺失 | 已在 `vite.config.ts` 内置缺省回退，更新到最新代码即可；无需手动创建 |
+| 浏览器打不开 / 端口不是 3000 | 旧版 `dev` 脚本未固定端口 | 最新 `package.json` 已固定 `127.0.0.1:3000`；确认代码为最新 |
+| 端口 3000 被占用 | 已有程序在用 3000 | 关掉占用程序，或用 `npm run dev -- --port 3001` 换端口 |
 
 ## 行情接口配置
 
