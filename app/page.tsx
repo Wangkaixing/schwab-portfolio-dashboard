@@ -15,6 +15,7 @@ import {
   Plus,
   RefreshCcw,
   Settings2,
+  Sparkles,
   Sun,
   Trash2,
   Upload,
@@ -205,6 +206,7 @@ const PAIR_SYMBOLS = ['CGDV', 'VTV', 'SCHD', 'KO'] as const;
 const PAIR_LENGTH = 35;
 const PAIR_ARM_THRESHOLD = 1;
 const DCA_PLANS_KEY = 'schwab-dashboard:dca-plans:v4';
+const THEME_KEY = 'schwab-dashboard:theme';
 
 function isSchwabExport(value: unknown): value is SchwabExport {
   const candidate = value as Partial<SchwabExport> | null;
@@ -715,7 +717,7 @@ export default function Home() {
   const [manualError, setManualError] = useState('');
   const [canUndoTransaction, setCanUndoTransaction] = useState(false);
   const [error, setError] = useState('');
-  const [dark, setDark] = useState(false);
+  const [theme, setTheme] = useState<'light' | 'dark' | 'glass'>('light');
   const [activeView, setActiveView] = useState<'portfolio' | 'dca'>(
     'portfolio',
   );
@@ -747,14 +749,31 @@ export default function Home() {
   const dcaPlanFileInput = useRef<HTMLInputElement>(null);
   const updateFileInput = useRef<HTMLInputElement>(null);
   const maintainedDataRef = useRef<SchwabExport>(initial);
+  const themeReadyRef = useRef(false);
   const [maintainedCount, setMaintainedCount] = useState(0);
   const displayMoney = (value: number, digits = 0) =>
     amountsMasked ? MASKED_VALUE : money(value, digits);
   const displayRawMoney = (value: string) =>
     amountsMasked && value ? MASKED_VALUE : empty(value);
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', dark);
-  }, [dark]);
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+    document.documentElement.classList.toggle('glass', theme === 'glass');
+    try {
+      if (themeReadyRef.current) localStorage.setItem(THEME_KEY, theme);
+    } catch {
+      // Theme persistence is optional.
+    }
+  }, [theme]);
+  useEffect(() => {
+    try {
+      const savedTheme = localStorage.getItem(THEME_KEY);
+      if (savedTheme === 'dark' || savedTheme === 'glass') setTheme(savedTheme);
+      themeReadyRef.current = true;
+    } catch {
+      // Keep the light theme when browser storage is unavailable.
+      themeReadyRef.current = true;
+    }
+  }, []);
   useEffect(() => {
     const today = new Intl.DateTimeFormat('sv-SE', {
       timeZone: 'Asia/Shanghai',
@@ -1184,7 +1203,7 @@ export default function Home() {
     ? (dcaMonthInvested / dcaMonthlyTarget) * 100
     : 0;
   const dcaYear = Number(dcaMonth.slice(0, 4));
-  const dcaHalf = Number(dcaMonth.slice(5, 7)) <= 6 ? 0 : 1;
+  const dcaQuarter = Math.floor((Number(dcaMonth.slice(5, 7)) - 1) / 3);
   const dcaYearMonths = useMemo(
     () =>
       Array.from({ length: 12 }, (_, index) => {
@@ -1818,6 +1837,20 @@ export default function Home() {
             <small>Portfolio Transaction Analytics</small>
           </div>
         </div>
+        <nav className="workspace-nav" aria-label="看板页面">
+          <button
+            className={activeView === 'portfolio' ? 'active' : ''}
+            onClick={() => setActiveView('portfolio')}
+          >
+            资产看板
+          </button>
+          <button
+            className={activeView === 'dca' ? 'active' : ''}
+            onClick={() => setActiveView('dca')}
+          >
+            定投计划
+          </button>
+        </nav>
         <div className="period">
           <span>数据覆盖</span>
           <strong>
@@ -1897,26 +1930,27 @@ export default function Home() {
             variant="ghost"
             size="icon"
             aria-label="切换主题"
-            onClick={() => setDark((v) => !v)}
+            title="切换主题：浅色 → macOS 毛玻璃 → 深色"
+            onClick={() =>
+              setTheme((current) =>
+                current === 'light'
+                  ? 'glass'
+                  : current === 'glass'
+                    ? 'dark'
+                    : 'light',
+              )
+            }
           >
-            {dark ? <Sun /> : <Moon />}
+            {theme === 'light' ? (
+              <Sparkles />
+            ) : theme === 'glass' ? (
+              <Moon />
+            ) : (
+              <Sun />
+            )}
           </Button>
         </div>
       </header>
-      <nav className="workspace-nav" aria-label="看板页面">
-        <button
-          className={activeView === 'portfolio' ? 'active' : ''}
-          onClick={() => setActiveView('portfolio')}
-        >
-          资产看板
-        </button>
-        <button
-          className={activeView === 'dca' ? 'active' : ''}
-          onClick={() => setActiveView('dca')}
-        >
-          定投计划
-        </button>
-      </nav>
       <aside className="dca-source-note" aria-label="数据源说明">
         <strong>数据源</strong>
         <span>
@@ -1954,11 +1988,12 @@ export default function Home() {
       >
         <div className="dca-heading">
           <div>
-            <p>DCA PLAN · {dcaMonth || '—'}</p>
+            <p>MONTHLY INVESTING</p>
             <h1>
-              {dcaMonth === todayKey.slice(0, 7)
-                ? `${dcaMonth.slice(0, 4)}年${Number(dcaMonth.slice(5))}月定投（本月）`
-                : `${dcaMonth.slice(0, 4)}年${Number(dcaMonth.slice(5))}月定投`}
+              {`DCA PLAN · ${dcaMonth}`}
+              {dcaMonth === todayKey.slice(0, 7) ? (
+                <span className="dca-current-badge">本月</span>
+              ) : null}
             </h1>
             <span>实际执行直接取自交易记录，无需重复记账。</span>
           </div>
@@ -2043,26 +2078,41 @@ export default function Home() {
               <div>
                 <p>年度节奏</p>
                 <h2>
-                  {dcaYear} 年{dcaHalf === 0 ? '上半年' : '下半年'}定投完成情况
+                  {dcaYear} 年第{dcaQuarter + 1}季度定投完成情况
                 </h2>
               </div>
-              <div className="dca-half-switch" aria-label="切换上下半年">
+              <div className="dca-period-switch" aria-label="切换季度">
                 <Button
                   variant="outline"
                   size="icon"
-                  aria-label="查看上半年"
-                  disabled={dcaHalf === 0}
-                  onClick={() => setSelectedDcaMonth(`${dcaYear}-01`)}
+                  aria-label="查看上一季度"
+                  disabled={dcaQuarter === 0}
+                  onClick={() =>
+                    setSelectedDcaMonth(
+                      dcaYear +
+                        '-' +
+                        String((dcaQuarter - 1) * 3 + 1).padStart(2, '0'),
+                    )
+                  }
                 >
                   <ChevronLeft />
                 </Button>
-                <span>{dcaHalf === 0 ? '1—6月' : '7—12月'}</span>
+                <span>
+                  Q{dcaQuarter + 1} · {dcaQuarter * 3 + 1}—{dcaQuarter * 3 + 3}
+                  月
+                </span>
                 <Button
                   variant="outline"
                   size="icon"
-                  aria-label="查看下半年"
-                  disabled={dcaHalf === 1}
-                  onClick={() => setSelectedDcaMonth(`${dcaYear}-07`)}
+                  aria-label="查看下一季度"
+                  disabled={dcaQuarter === 3}
+                  onClick={() =>
+                    setSelectedDcaMonth(
+                      dcaYear +
+                        '-' +
+                        String((dcaQuarter + 1) * 3 + 1).padStart(2, '0'),
+                    )
+                  }
                 >
                   <ChevronRight />
                 </Button>
@@ -2102,31 +2152,33 @@ export default function Home() {
               </div>
             </div>
             <div className="dca-year-grid">
-              {dcaYearMonths.slice(dcaHalf * 6, dcaHalf * 6 + 6).map((item) => (
-                <button
-                  key={item.key}
-                  className={`dca-year-month ${item.key === dcaMonth ? 'active' : ''} ${item.progress >= 100 ? 'complete' : ''}`}
-                  onClick={() => setSelectedDcaMonth(item.key)}
-                  aria-label={`${item.label} 已投入 ${displayMoney(item.invested, 0)}`}
-                >
-                  <span>{item.label}</span>
-                  <i
-                    className="dca-year-ring"
-                    style={
-                      {
-                        '--ring-progress': `${Math.min(100, item.progress) * 3.6}deg`,
-                      } as React.CSSProperties
-                    }
+              {dcaYearMonths
+                .slice(dcaQuarter * 3, dcaQuarter * 3 + 3)
+                .map((item) => (
+                  <button
+                    key={item.key}
+                    className={`dca-year-month ${item.key === dcaMonth ? 'active' : ''} ${item.progress >= 100 ? 'complete' : ''}`}
+                    onClick={() => setSelectedDcaMonth(item.key)}
+                    aria-label={`${item.label} 已投入 ${displayMoney(item.invested, 0)}`}
                   >
-                    <b>{item.progress.toFixed(0)}%</b>
-                  </i>
-                  <small>
-                    {item.trades
-                      ? `${item.trades} 笔 · ${displayMoney(item.invested, 0)}`
-                      : '暂无买入'}
-                  </small>
-                </button>
-              ))}
+                    <span>{item.label}</span>
+                    <i
+                      className="dca-year-ring"
+                      style={
+                        {
+                          '--ring-progress': `${Math.min(100, item.progress) * 3.6}deg`,
+                        } as React.CSSProperties
+                      }
+                    >
+                      <b>{item.progress.toFixed(0)}%</b>
+                    </i>
+                    <small>
+                      {item.trades
+                        ? `${item.trades} 笔 · ${displayMoney(item.invested, 0)}`
+                        : '暂无买入'}
+                    </small>
+                  </button>
+                ))}
             </div>
           </article>
 
@@ -3052,6 +3104,10 @@ export default function Home() {
               <div>
                 <span>真实现金成本</span>
                 <strong>{displayMoney(holdings.totalCost, 2)}</strong>
+              </div>
+              <div>
+                <span>累计净入金</span>
+                <strong>{displayMoney(externalNetContributions, 2)}</strong>
               </div>
               <div>
                 <span>账户总盈亏</span>

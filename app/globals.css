@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
+@import './glass-theme.css';
 
 @theme inline {
   --color-background: var(--background);
@@ -107,7 +108,7 @@ input {
   min-height: 72px;
   padding: 11px max(24px, calc((100vw - 1480px) / 2));
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: auto auto 1fr auto;
   align-items: center;
   gap: 22px;
   border-bottom: 1px solid var(--border);
@@ -733,7 +734,7 @@ input {
   --market-up: var(--positive);
   --market-down: var(--negative);
   overflow: hidden;
-  padding: 22px 24px 0;
+  padding: 16px 20px 0;
   border: 1px solid #d7e2ed;
   border-radius: 14px;
   background:
@@ -762,7 +763,7 @@ input {
   gap: 24px;
 }
 .portfolio-overview-main > p {
-  margin: 0 0 13px;
+  margin: 0 0 8px;
   color: var(--primary);
   font: 650 11px var(--font-geist-mono);
   letter-spacing: 0.13em;
@@ -776,7 +777,7 @@ input {
   display: block;
   margin-top: 2px;
   color: var(--foreground);
-  font: 720 clamp(28px, 3.2vw, 42px) var(--font-geist-mono);
+  font: 720 clamp(24px, 2.5vw, 34px) var(--font-geist-mono);
   letter-spacing: -0.045em;
 }
 .portfolio-day-change {
@@ -784,7 +785,7 @@ input {
   align-items: center;
   gap: 8px;
   min-height: 25px;
-  margin-top: 5px;
+  margin-top: 3px;
   font: 650 14px var(--font-geist-mono);
 }
 .portfolio-surface .pos {
@@ -807,7 +808,7 @@ input {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 8px;
+  gap: 5px;
   padding-bottom: 5px;
 }
 .portfolio-overview-actions button {
@@ -828,15 +829,15 @@ input {
 }
 .portfolio-metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin-top: 22px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-top: 14px;
   border-top: 1px solid var(--border);
 }
 .portfolio-metrics > div {
-  padding: 14px 16px 16px 0;
+  padding: 10px 12px 12px 0;
 }
 .portfolio-metrics > div + div {
-  padding-left: 18px;
+  padding-left: 14px;
   border-left: 1px solid var(--border);
 }
 .portfolio-metrics span {
@@ -848,7 +849,7 @@ input {
   display: block;
   margin-top: 4px;
   color: var(--foreground);
-  font: 680 17px var(--font-geist-mono);
+  font: 680 15px var(--font-geist-mono);
 }
 .is-spinning {
   animation: quote-spin 0.8s linear infinite;
@@ -1660,7 +1661,7 @@ input {
 
 @media (max-width: 1280px) {
   .topbar {
-    grid-template-columns: auto 1fr;
+    grid-template-columns: auto auto 1fr;
   }
   .period {
     display: none;
@@ -1687,8 +1688,25 @@ input {
 }
 @media (max-width: 920px) {
   .topbar {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-areas:
+      'identity actions'
+      'nav nav';
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 12px;
+  }
+  .identity {
+    grid-area: identity;
+  }
+  .workspace-nav {
+    grid-area: nav;
+    width: 100%;
+  }
+  .workspace-nav button {
+    flex: 1;
+  }
+  .top-actions {
+    grid-area: actions;
   }
   .top-actions button span {
     display: none;
@@ -1764,12 +1782,12 @@ input {
     padding: 14px;
   }
   .portfolio-surface {
-    padding: 18px 16px 0;
+    padding: 14px 12px 0;
   }
   .portfolio-overview {
     align-items: flex-start;
     flex-direction: column;
-    gap: 16px;
+    gap: 10px;
   }
   .portfolio-overview-actions {
     width: 100%;
@@ -1788,6 +1806,12 @@ input {
   }
   .portfolio-metrics > div:nth-child(4) {
     border-top: 1px solid var(--border);
+  }
+  .portfolio-metrics > div:nth-child(5) {
+    grid-column: 1 / -1;
+    padding-left: 0;
+    border-top: 1px solid var(--border);
+    border-left: 0;
   }
   .panel-head {
     flex-direction: column;
@@ -1967,15 +1991,15 @@ input {
   display: none !important;
 }
 .workspace-nav {
-  width: min(1480px, calc(100% - 48px));
-  margin: 14px auto -8px;
+  width: auto;
+  margin: 0;
   display: flex;
+  flex-shrink: 0;
   gap: 4px;
   padding: 4px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: var(--card);
-  box-shadow: var(--card-shadow);
+  background: var(--muted);
 }
 .workspace-nav button {
   min-height: 36px;
@@ -2017,9 +2041,24 @@ input {
 }
 .dca-heading h1 {
   margin: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
   font-size: clamp(27px, 3vw, 38px);
   line-height: 1.15;
   letter-spacing: -0.035em;
+}
+.dca-heading h1 .dca-current-badge {
+  padding: 4px 9px;
+  border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 8%, var(--card));
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 680;
+  line-height: 1.25;
+  letter-spacing: 0.02em;
 }
 .dca-heading > div > span {
   display: block;
@@ -2705,28 +2744,28 @@ input {
 .dca-calendar-panel {
   min-width: 0;
 }
-.dca-half-switch {
+.dca-period-switch {
   display: flex;
   align-items: center;
   gap: 7px;
 }
-.dca-half-switch > span {
+.dca-period-switch > span {
   min-width: 52px;
   color: var(--muted-foreground);
   font-size: 11px;
   text-align: center;
 }
-.dca-half-switch button {
+.dca-period-switch button {
   width: 28px;
   height: 28px;
 }
-.dca-half-switch svg {
+.dca-period-switch svg {
   width: 14px;
   height: 14px;
 }
 .dca-year-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin-top: 14px;
 }
@@ -2972,15 +3011,6 @@ input {
   }
 }
 @media (max-width: 700px) {
-  .workspace-nav {
-    width: calc(100% - 24px);
-    position: sticky;
-    top: 64px;
-    z-index: 20;
-  }
-  .workspace-nav button {
-    flex: 1;
-  }
   .dca-heading {
     align-items: flex-start;
     flex-direction: column;
@@ -3365,7 +3395,7 @@ input {
     width: 100%;
   }
   .dca-year-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .dca-compact-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
