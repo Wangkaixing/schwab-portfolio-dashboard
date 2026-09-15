@@ -811,6 +811,15 @@ input {
   gap: 5px;
   padding-bottom: 5px;
 }
+.quote-action-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.portfolio-overview-actions .quote-clear-button {
+  width: 36px;
+  min-width: 36px;
+}
 .portfolio-overview-actions button {
   min-width: 118px;
   border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
@@ -1020,6 +1029,14 @@ input {
   border-radius: 3px;
   background: color-mix(in srgb, currentColor 13%, transparent);
   font-size: 10px;
+}
+.market-cell small.quote-time {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted-foreground) !important;
+  font-size: 9px;
+  font-weight: 500;
 }
 .asset-type-badge {
   --asset-color: #73849a;
@@ -2946,6 +2963,66 @@ input {
 }
 .dca-calendar-legend small {
   margin-left: auto;
+}
+.market-settings-dialog {
+  max-width: 500px;
+}
+.market-source-list {
+  display: grid;
+  gap: 8px;
+}
+.market-source-list > div,
+.market-cache-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.market-source-list > div {
+  padding: 12px 13px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel-subtle);
+}
+.market-source-list span,
+.market-source-list small {
+  display: block;
+}
+.market-source-list small {
+  margin-top: 3px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.market-source-list b {
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.market-source-list b.configured {
+  background: color-mix(in srgb, var(--positive) 13%, transparent);
+  color: var(--positive);
+}
+.market-source-list b.unconfigured {
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+.market-strategy-note {
+  display: grid;
+  gap: 4px;
+  padding: 11px 13px;
+  border-left: 3px solid var(--primary);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--primary) 6%, var(--card));
+}
+.market-strategy-note span,
+.market-cache-row > span {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.market-cache-row {
+  padding-top: 4px;
 }
 .dca-settings-list {
   display: grid;

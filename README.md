@@ -91,20 +91,20 @@ FINNHUB_API_KEY=你的_finnhub_api_key
 TWELVE_DATA_API_KEY=你的_twelve_data_api_key
 ```
 
-### Finnhub
+### 行情源策略
 
-用于获取持仓现价与当日涨跌。前往 [Finnhub Dashboard](https://finnhub.io/dashboard) 创建 API Key，填入 `FINNHUB_API_KEY`。
+“更新行情”优先使用 Twelve Data 获取现价、今日涨跌和报价时间；Twelve Data 请求失败或缺少标的时，再由 Finnhub 自动补齐。两个 Key 都配置时覆盖率最佳。行情只在手动点击时请求，不进行后台轮询。
 
-- 页面入口：“更新行情”
-- 项目接口：`POST /api/quotes`，请求体示例：`{"symbols":["QLD","IBIT","CGDV"]}`
-- 仅在手动点击时请求，不进行后台轮询
+- Finnhub Key：[Finnhub Dashboard](https://finnhub.io/dashboard)
+- 行情接口：`POST /api/quotes`，请求体示例：`{"symbols":["QLD","IBIT","CGDV"]}`
+- 页面“更多 → 行情设置”只显示配置状态，不读取或展示真实 Key
 
 ### Twelve Data
 
-用于获取 Bo Pair 指标所需的历史日线。前往 [Twelve Data](https://twelvedata.com/) 创建 API Key，填入 `TWELVE_DATA_API_KEY`。
+同时用于现价行情与 Bo Pair 指标所需的历史日线。前往 [Twelve Data](https://twelvedata.com/) 创建 API Key，填入 `TWELVE_DATA_API_KEY`。
 
-- 页面入口：“更新指标”
-- 项目接口：`GET /api/pair-indicators`
+- 页面入口：“更新行情”和“更新指标”
+- 项目接口：`POST /api/quotes` 和 `GET /api/pair-indicators`
 - 默认计算 CGDV/QQQ、VTV/QQQ、SCHD/QQQ 与 KO/QQQ
 
 免费套餐通常有请求频率和每日额度限制，具体以服务商当前规则为准。修改 `.env.local` 后需要重启开发服务。

@@ -127,6 +127,8 @@ type MarketQuote = {
   changePercent: number;
   previousClose: number;
   timestamp: number;
+  source?: 'Twelve Data' | 'Finnhub';
+  isExtended?: boolean;
 };
 type CandleSeries = { closes: number[]; timestamps: number[] };
 type PairPoint = {
@@ -199,7 +201,7 @@ const ACTION_LABELS: Record<string, string> = {
 };
 const PAGE_SIZE = 8;
 const LAST_IMPORT_KEY = 'schwab-dashboard:last-json-import';
-const LAST_QUOTES_KEY = 'schwab-dashboard:last-market-quotes';
+const LAST_QUOTES_KEY = 'schwab-dashboard:last-market-quotes:v2';
 const UNDO_TRANSACTION_KEY = 'schwab-dashboard:transaction-undo';
 const PAIR_INDICATORS_KEY = 'schwab-dashboard:bo-pair-indicators:v2';
 const PAIR_SYMBOLS = ['CGDV', 'VTV', 'SCHD', 'KO'] as const;
@@ -469,6 +471,19 @@ function displayDate(value: string) {
   const [m, d, y] = value.slice(0, 10).split('/');
   return `${y}.${m}.${d}`;
 }
+function displayQuoteTime(quote: MarketQuote) {
+  if (!quote.timestamp) return '报价时间未知';
+  const value = new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(quote.timestamp * 1000));
+  const source = quote.source === 'Finnhub' ? 'Finnhub' : 'Twelve';
+  return `${source} · ${quote.isExtended ? '盘前/盘后 · ' : ''}${value}`;
+}
+
 function money(value: number, digits = 0) {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -707,6 +722,12 @@ export default function Home() {
   const [pairLoading, setPairLoading] = useState(false);
   const [pairError, setPairError] = useState('');
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
+  const [quoteClearDialogOpen, setQuoteClearDialogOpen] = useState(false);
+  const [marketSettingsOpen, setMarketSettingsOpen] = useState(false);
+  const [marketSourceStatus, setMarketSourceStatus] = useState<{
+    twelveDataConfigured: boolean;
+    finnhubConfigured: boolean;
+  } | null>(null);
   const [manualDialogOpen, setManualDialogOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] =
     useState<Transaction | null>(null);
@@ -1727,6 +1748,33 @@ export default function Home() {
     setPairUpdatedAt('尚未更新');
     setPairError('');
   }
+  async function openMarketSettings() {
+    setMarketSettingsOpen(true);
+    setMarketSourceStatus(null);
+    try {
+      const response = await fetch('/api/quotes', { cache: 'no-store' });
+      if (!response.ok) return;
+      const status = (await response.json()) as {
+        twelveDataConfigured: boolean;
+        finnhubConfigured: boolean;
+      };
+      setMarketSourceStatus(status);
+    } catch {
+      setMarketSourceStatus(null);
+    }
+  }
+  function clearQuoteCache() {
+    try {
+      localStorage.removeItem(LAST_QUOTES_KEY);
+      localStorage.removeItem('schwab-dashboard:last-market-quotes');
+    } catch {
+      // The visible state can still be cleared when storage is unavailable.
+    }
+    setQuotes({});
+    setQuotesUpdatedAt('尚未更新');
+    setQuoteRefreshStatus('');
+    setQuotesError('');
+  }
   async function refreshQuotes() {
     const symbols = holdings.positions.map((item) => item.symbol);
     if (!symbols.length || quotesLoading) return;
@@ -1907,6 +1955,9 @@ export default function Home() {
               <DropdownMenuItem onClick={exportPagePdf}>
                 <Download /> 导出页面 PDF
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => void openMarketSettings()}>
+                <Settings2 /> 行情设置
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 variant="destructive"
@@ -1957,7 +2008,7 @@ export default function Home() {
           <b>交易与成本</b> 嘉信 JSON · 本地导入
         </span>
         <span>
-          <b>现价与今日涨跌</b> Finnhub · 手动更新
+          <b>现价、今日涨跌与报价时间</b> Twelve Data 优先 · Finnhub 补充
         </span>
         <span>
           <b>Bo Pair 历史日线</b> Twelve Data · 手动更新
@@ -1966,6 +2017,77 @@ export default function Home() {
           <b>定投计划</b> 当前浏览器本地保存
         </span>
       </aside>
+      <Dialog open={marketSettingsOpen} onOpenChange={setMarketSettingsOpen}>
+        <DialogContent className="market-settings-dialog">
+          <DialogHeader>
+            <DialogTitle>行情设置</DialogTitle>
+            <DialogDescription>
+              API Key 仅保存在服务器环境变量中，页面不会读取或显示密钥内容。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="market-source-list">
+            <div>
+              <span>
+                <strong>Twelve Data</strong>
+                <small>首选行情源</small>
+              </span>
+              <b
+                className={
+                  marketSourceStatus?.twelveDataConfigured
+                    ? 'configured'
+                    : 'unconfigured'
+                }
+              >
+                {marketSourceStatus
+                  ? marketSourceStatus.twelveDataConfigured
+                    ? '已配置'
+                    : '未配置'
+                  : '检查中…'}
+              </b>
+            </div>
+            <div>
+              <span>
+                <strong>Finnhub</strong>
+                <small>缺失标的自动补充</small>
+              </span>
+              <b
+                className={
+                  marketSourceStatus?.finnhubConfigured
+                    ? 'configured'
+                    : 'unconfigured'
+                }
+              >
+                {marketSourceStatus
+                  ? marketSourceStatus.finnhubConfigured
+                    ? '已配置'
+                    : '未配置'
+                  : '检查中…'}
+              </b>
+            </div>
+          </div>
+          <div className="market-strategy-note">
+            <strong>当前策略</strong>
+            <span>
+              Twelve Data 优先，请求失败或没有标的数据再由 Finnhub 补齐。
+            </span>
+          </div>
+          <div className="market-cache-row">
+            <span>
+              本地缓存 {Object.keys(quotes).length} 个报价 · {quotesUpdatedAt}
+            </span>
+            <Button
+              variant="outline"
+              disabled={!Object.keys(quotes).length}
+              onClick={() => {
+                setMarketSettingsOpen(false);
+                setQuoteClearDialogOpen(true);
+              }}
+            >
+              <Trash2 /> 清除现价缓存
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       <AlertDialog open={clearDialogOpen} onOpenChange={setClearDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -1979,6 +2101,25 @@ export default function Home() {
             <AlertDialogCancel>取消</AlertDialogCancel>
             <AlertDialogAction variant="destructive" onClick={clearJsonRecords}>
               确认清空
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={quoteClearDialogOpen}
+        onOpenChange={setQuoteClearDialogOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认清除现价缓存？</AlertDialogTitle>
+            <AlertDialogDescription>
+              这会清除当前浏览器保存的现价、今日涨跌及报价时间。交易记录、持仓成本和定投计划不会受到影响，之后可重新点击“更新行情”获取报价。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={clearQuoteCache}>
+              确认清除
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -2038,6 +2179,17 @@ export default function Home() {
             >
               <RefreshCcw className={quotesLoading ? 'is-spinning' : ''} />
               更新行情
+            </Button>
+            <Button
+              className="quote-clear-button"
+              variant="outline"
+              size="icon"
+              aria-label="清除现价缓存"
+              title="清除现价缓存"
+              disabled={!Object.keys(quotes).length || quotesLoading}
+              onClick={() => setQuoteClearDialogOpen(true)}
+            >
+              <Trash2 />
             </Button>
             <Button variant="outline" onClick={() => setDcaSettingsOpen(true)}>
               <Settings2 /> 设置计划
@@ -2497,6 +2649,12 @@ export default function Home() {
                               >
                                 {row.quote.changePercent >= 0 ? '+' : ''}
                                 {row.quote.changePercent.toFixed(2)}%
+                              </small>
+                              <small
+                                className="quote-time"
+                                title="Twelve Data 报价时间（本地时区）"
+                              >
+                                {displayQuoteTime(row.quote)}
                               </small>
                             </div>
                           ) : (
@@ -3071,13 +3229,28 @@ export default function Home() {
                 </div>
               </div>
               <div className="portfolio-overview-actions">
-                <Button
-                  onClick={refreshQuotes}
-                  disabled={!holdings.positions.length || quotesLoading}
-                >
-                  <RefreshCcw className={quotesLoading ? 'is-spinning' : ''} />
-                  {quotesLoading ? '更新中…' : '更新行情'}
-                </Button>
+                <div className="quote-action-row">
+                  <Button
+                    onClick={refreshQuotes}
+                    disabled={!holdings.positions.length || quotesLoading}
+                  >
+                    <RefreshCcw
+                      className={quotesLoading ? 'is-spinning' : ''}
+                    />
+                    {quotesLoading ? '更新中…' : '更新行情'}
+                  </Button>
+                  <Button
+                    className="quote-clear-button"
+                    variant="outline"
+                    size="icon"
+                    aria-label="清除现价缓存"
+                    title="清除现价缓存"
+                    disabled={!Object.keys(quotes).length || quotesLoading}
+                    onClick={() => setQuoteClearDialogOpen(true)}
+                  >
+                    <Trash2 />
+                  </Button>
+                </div>
                 <small>
                   行情覆盖 {marketSummary.quotedCount}/
                   {holdings.positions.length}
@@ -3213,6 +3386,12 @@ export default function Home() {
                                 >
                                   {quote.changePercent >= 0 ? '+' : ''}
                                   {quote.changePercent.toFixed(2)}%
+                                </small>
+                                <small
+                                  className="quote-time"
+                                  title="Twelve Data 报价时间（本地时区）"
+                                >
+                                  {displayQuoteTime(quote)}
                                 </small>
                               </div>
                             ) : (
