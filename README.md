@@ -3,6 +3,8 @@
 面向嘉信交易记录的个人资产与定投看板。交易数据由用户导入并保存在当前浏览器，不随源码上传。
 
 > “真实现金成本”和 FIFO 盈亏用于个人复盘，不能替代嘉信税务成本、1099-B 或专业税务意见。
+<img width="550" height="380" alt="image" src="https://github.com/user-attachments/assets/902e8cf4-0750-40b6-86e1-4daee626c612" />
+<img width="550" height="380" alt="image" src="https://github.com/user-attachments/assets/37f3e5cc-28f5-479a-891b-bbffb71931bf" />
 
 ## 如果出现信息不全或者其他问题，请在本地问问聪明的codex怎么解决。
 
