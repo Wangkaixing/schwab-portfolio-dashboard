@@ -84,6 +84,48 @@ macOS 用户也可直接双击项目里的 `直接启动看板-macOS.command`，
 | 浏览器打不开 / 端口不是 3000 | 旧版 `dev` 脚本未固定端口 | 最新 `package.json` 已固定 `127.0.0.1:3000`；确认代码为最新 |
 | 端口 3000 被占用 | 已有程序在用 3000 | 关掉占用程序，或用 `npm run dev -- --port 3001` 换端口 |
 
+## 更新已有安装
+
+升级前建议先在页面中导出交易 JSON 和定投计划 JSON。行情缓存不需要备份，升级后重新点击“更新行情”即可。
+
+### 通过 Git 克隆的用户
+
+进入项目目录，先确认是否有未提交的本地修改：
+
+```bash
+git status
+```
+
+如果工作区干净，执行：
+
+```bash
+git pull --ff-only origin main
+npm ci
+npm run dev
+```
+
+`.env.local` 已被 Git 忽略，正常情况下不会被更新覆盖。如果 `git status` 显示存在本地修改，请先备份或提交修改，不要直接强制覆盖。
+
+### 通过 ZIP 下载的用户
+
+1. 备份旧目录中的 `.env.local`。
+2. 从 [Releases](https://github.com/Wangkaixing/schwab-portfolio-dashboard/releases) 下载最新版本源码，并解压到新目录。
+3. 将旧目录的 `.env.local` 复制到新目录。
+4. 在新目录执行：
+
+```bash
+npm ci
+npm run dev
+```
+
+不要复制旧版 `node_modules`，应使用新版本重新安装依赖。
+
+### 已发布到 GPT Site 的用户
+
+更新本地源码后，还需要通过 Codex 将项目重新发布到原来的 GPT Site；仅执行 `git pull` 不会自动更新线上站点。继续使用原站点项目，可以保持网址和服务器环境变量不变。
+
+交易记录和定投计划保存在浏览器本地。同一站点地址下通常会继续保留；如果创建了新站点或更换域名，需要重新导入交易 JSON 和定投计划 JSON。
+
 ## 行情接口配置
 
 两个行情接口均由服务端路由调用，API Key 不会发送到浏览器。在 `.env.local` 中填写：
