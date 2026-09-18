@@ -97,6 +97,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Tooltip as UiTooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 type Transaction = {
   Date: string;
@@ -381,6 +387,23 @@ function dateKey(value: string) {
   const [m, d, y] = value.slice(0, 10).split('/');
   return `${y}-${m}-${d}`;
 }
+function offsetMonthKey(monthKey: string, offset: number) {
+  const [year, month] = monthKey.split('-').map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1 + offset, 1));
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+function calendarTradeSummary(row: Transaction) {
+  const buy = row.Action === 'Buy';
+  const shares = Math.abs(numberFrom(row.Quantity)).toLocaleString('en-US', {
+    maximumFractionDigits: 4,
+  });
+  const cash = Math.abs(numberFrom(row.Amount));
+  return {
+    label: buy ? '买入' : row.Action === 'Sell' ? '卖出' : row.Action,
+    shares: `${buy ? '+' : '-'}${shares} 股`,
+    amount: `${buy ? '-' : '+'}${money(cash, 2)}`,
+  };
+}
 function firstTransactionDate(data: SchwabExport) {
   const first = data.BrokerageTransactions.reduce<string | null>(
     (earliest, row) => {
@@ -472,16 +495,27 @@ function displayDate(value: string) {
   return `${y}.${m}.${d}`;
 }
 function displayQuoteTime(quote: MarketQuote) {
-  if (!quote.timestamp) return '报价时间未知';
-  const value = new Intl.DateTimeFormat('zh-CN', {
+  if (!quote.timestamp) return '时间未知';
+  return new Intl.DateTimeFormat('zh-CN', {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
   }).format(new Date(quote.timestamp * 1000));
+}
+function QuoteMeta({ quote }: { quote: MarketQuote }) {
   const source = quote.source === 'Finnhub' ? 'Finnhub' : 'Twelve';
-  return `${source} · ${quote.isExtended ? '盘前/盘后 · ' : ''}${value}`;
+  const fullSource = quote.source === 'Finnhub' ? 'Finnhub' : 'Twelve Data';
+  return (
+    <small
+      className="quote-meta"
+      title={`${fullSource} · ${quote.isExtended ? '盘前/盘后 · ' : ''}${displayQuoteTime(quote)}（本地时间）`}
+    >
+      <span className="quote-source">{source}</span>
+      <span className="quote-time-text">{displayQuoteTime(quote)}</span>
+    </small>
+  );
 }
 
 function money(value: number, digits = 0) {
@@ -491,6 +525,16 @@ function money(value: number, digits = 0) {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   }).format(value);
+}
+function signedMoney(value: number) {
+  return `${value >= 0 ? '+' : '-'}${money(Math.abs(value), 2)}`;
+}
+function signedPercent(value: number) {
+  return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+}
+function signedPercentagePoints(value: number) {
+  const rounded = Number(value.toFixed(1));
+  return `${rounded > 0 ? '+' : ''}${rounded.toFixed(1)} 个百分点`;
 }
 const MASKED_VALUE = '****';
 function compactMoney(value: number) {
@@ -744,6 +788,10 @@ export default function Home() {
   );
   const [todayKey, setTodayKey] = useState('1970-01-01');
   const [selectedDcaMonth, setSelectedDcaMonth] = useState('1970-01');
+  const [calendarDayDetails, setCalendarDayDetails] = useState<{
+    key: string;
+    actions: Transaction[];
+  } | null>(null);
   const [dcaPlans, setDcaPlans] = useState<DcaPlan[]>(DEFAULT_DCA_PLANS);
   const [dcaSettingsOpen, setDcaSettingsOpen] = useState(false);
   const [dcaPlanNotice, setDcaPlanNotice] = useState('');
@@ -1025,6 +1073,10 @@ export default function Home() {
       ),
     [typedHoldings, quotes],
   );
+  const portfolioMarketWeightReady =
+    typedHoldings.length > 0 &&
+    marketSummary.quotedCount === typedHoldings.length &&
+    marketSummary.marketValue > 0;
   const marketDayChangePercent =
     marketSummary.marketValue - marketSummary.dayChange
       ? (marketSummary.dayChange /
@@ -1072,6 +1124,14 @@ export default function Home() {
     ? (totalPnl / Math.abs(externalNetContributions)) * 100
     : 0;
   const dcaMonth = selectedDcaMonth;
+  const earliestDcaMonth = useMemo(
+    () =>
+      data.BrokerageTransactions.length
+        ? firstTransactionDate(data).slice(0, 7)
+        : todayKey.slice(0, 7),
+    [data, todayKey],
+  );
+  const latestDcaMonth = offsetMonthKey(todayKey.slice(0, 7), 12);
   const activeDcaPlans = useMemo(
     () =>
       dcaPlans.filter(
@@ -1225,6 +1285,9 @@ export default function Home() {
     : 0;
   const dcaYear = Number(dcaMonth.slice(0, 4));
   const dcaQuarter = Math.floor((Number(dcaMonth.slice(5, 7)) - 1) / 3);
+  const dcaQuarterStart = `${dcaYear}-${String(dcaQuarter * 3 + 1).padStart(2, '0')}`;
+  const previousQuarterStart = offsetMonthKey(dcaQuarterStart, -3);
+  const nextQuarterStart = offsetMonthKey(dcaQuarterStart, 3);
   const dcaYearMonths = useMemo(
     () =>
       Array.from({ length: 12 }, (_, index) => {
@@ -1255,7 +1318,9 @@ export default function Home() {
       const day = index - leading + 1;
       const key = `${dcaMonth}-${String(day).padStart(2, '0')}`;
       const actions = dcaMonthTransactions.filter(
-        (row) => dateKey(row.Date) === key,
+        (row) =>
+          dateKey(row.Date) === key &&
+          (row.Action === 'Buy' || row.Action === 'Sell'),
       );
       const buys = actions.filter((row) => row.Action === 'Buy');
       return {
@@ -1316,6 +1381,9 @@ export default function Home() {
     (sum, row) => sum + row.marketValue,
     0,
   );
+  const dcaMarketWeightReady =
+    dcaAnalysisMarket > 0 &&
+    dcaAnalysisRows.every((row) => row.quantity <= 0 || Boolean(row.quote));
   const dcaAnalysisPnl = dcaAnalysisMarket - dcaAnalysisCost;
   const dcaAnalysisReturn = dcaAnalysisCost
     ? (dcaAnalysisPnl / dcaAnalysisCost) * 100
@@ -1557,11 +1625,10 @@ export default function Home() {
     event.target.value = '';
   }
   function shiftDcaMonth(offset: number) {
-    const [year, month] = selectedDcaMonth.split('-').map(Number);
-    const shifted = new Date(Date.UTC(year, month - 1 + offset, 1));
-    setSelectedDcaMonth(
-      `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}`,
-    );
+    const shifted = offsetMonthKey(selectedDcaMonth, offset);
+    if (shifted >= earliestDcaMonth && shifted <= latestDcaMonth) {
+      setSelectedDcaMonth(shifted);
+    }
   }
   function openEditTransactionDialog() {
     if (!selected) return;
@@ -2151,6 +2218,7 @@ export default function Home() {
                 variant="outline"
                 size="icon"
                 aria-label="查看上个月"
+                disabled={selectedDcaMonth <= earliestDcaMonth}
                 onClick={() => shiftDcaMonth(-1)}
               >
                 <ChevronLeft />
@@ -2158,15 +2226,21 @@ export default function Home() {
               <Input
                 type="month"
                 aria-label="选择定投月份"
-                max={todayKey.slice(0, 7)}
+                min={earliestDcaMonth}
+                max={latestDcaMonth}
                 value={selectedDcaMonth}
-                onChange={(event) => setSelectedDcaMonth(event.target.value)}
+                onChange={(event) => {
+                  const month = event.target.value;
+                  if (month >= earliestDcaMonth && month <= latestDcaMonth) {
+                    setSelectedDcaMonth(month);
+                  }
+                }}
               />
               <Button
                 variant="outline"
                 size="icon"
                 aria-label="查看下个月"
-                disabled={selectedDcaMonth >= todayKey.slice(0, 7)}
+                disabled={selectedDcaMonth >= latestDcaMonth}
                 onClick={() => shiftDcaMonth(1)}
               >
                 <ChevronRight />
@@ -2238,12 +2312,14 @@ export default function Home() {
                   variant="outline"
                   size="icon"
                   aria-label="查看上一季度"
-                  disabled={dcaQuarter === 0}
+                  disabled={
+                    offsetMonthKey(dcaQuarterStart, -1) < earliestDcaMonth
+                  }
                   onClick={() =>
                     setSelectedDcaMonth(
-                      dcaYear +
-                        '-' +
-                        String((dcaQuarter - 1) * 3 + 1).padStart(2, '0'),
+                      previousQuarterStart < earliestDcaMonth
+                        ? earliestDcaMonth
+                        : previousQuarterStart,
                     )
                   }
                 >
@@ -2257,14 +2333,8 @@ export default function Home() {
                   variant="outline"
                   size="icon"
                   aria-label="查看下一季度"
-                  disabled={dcaQuarter === 3}
-                  onClick={() =>
-                    setSelectedDcaMonth(
-                      dcaYear +
-                        '-' +
-                        String((dcaQuarter + 1) * 3 + 1).padStart(2, '0'),
-                    )
-                  }
+                  disabled={nextQuarterStart > latestDcaMonth}
+                  onClick={() => setSelectedDcaMonth(nextQuarterStart)}
                 >
                   <ChevronRight />
                 </Button>
@@ -2353,34 +2423,101 @@ export default function Home() {
               <span>五</span>
               <span>六</span>
             </div>
-            <div className="dca-calendar-grid">
-              {dcaCalendar.map((cell, index) =>
-                cell ? (
-                  <button
-                    key={cell.key}
-                    className={`dca-calendar-day ${cell.buys.length ? 'buy' : ''} ${cell.actions.some((row) => row.Action === 'Sell') ? 'sell' : ''}`}
-                    title={
-                      cell.actions.length
-                        ? cell.actions
-                            .map((row) => `${row.Action} ${row.Symbol}`)
-                            .join(' · ')
-                        : undefined
-                    }
-                    onClick={() =>
-                      cell.actions[0] && setSelected(cell.actions[0])
-                    }
-                    disabled={!cell.actions.length}
-                  >
-                    <span>{cell.day}</span>
-                    {cell.actions.length ? (
-                      <i>{cell.buys.length ? '买' : '卖'}</i>
-                    ) : null}
-                  </button>
-                ) : (
-                  <span className="dca-calendar-empty" key={`empty-${index}`} />
-                ),
-              )}
-            </div>
+            <TooltipProvider>
+              <div className="dca-calendar-grid">
+                {dcaCalendar.map((cell, index) =>
+                  cell ? (
+                    cell.actions.length ? (
+                      <UiTooltip key={cell.key}>
+                        <TooltipTrigger
+                          render={
+                            <button
+                              type="button"
+                              className={`dca-calendar-day ${cell.buys.length ? 'buy' : ''} ${cell.actions.some((row) => row.Action === 'Sell') ? 'sell' : ''}`}
+                              aria-label={`${cell.key}，${cell.buys.length} 笔买入，${cell.actions.filter((row) => row.Action === 'Sell').length} 笔卖出，查看完整记录`}
+                              onClick={() =>
+                                cell.actions.length === 1
+                                  ? setSelected(cell.actions[0])
+                                  : setCalendarDayDetails({
+                                      key: cell.key,
+                                      actions: cell.actions,
+                                    })
+                              }
+                            />
+                          }
+                        >
+                          <span>{cell.day}</span>
+                          <span className="dca-calendar-markers">
+                            {cell.buys.length ? (
+                              <i className="buy">
+                                买{cell.buys.length > 1 ? cell.buys.length : ''}
+                              </i>
+                            ) : null}
+                            {cell.actions.some(
+                              (row) => row.Action === 'Sell',
+                            ) ? (
+                              <i className="sell">
+                                卖
+                                {cell.actions.filter(
+                                  (row) => row.Action === 'Sell',
+                                ).length > 1
+                                  ? cell.actions.filter(
+                                      (row) => row.Action === 'Sell',
+                                    ).length
+                                  : ''}
+                              </i>
+                            ) : null}
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent
+                          className="dca-calendar-tooltip"
+                          side="top"
+                        >
+                          <strong>
+                            {cell.key} · {cell.actions.length} 笔交易
+                          </strong>
+                          {cell.actions.map((row, rowIndex) => {
+                            const summary = calendarTradeSummary(row);
+                            return (
+                              <div
+                                className="dca-calendar-trade"
+                                key={rowIndex}
+                              >
+                                <span
+                                  className={
+                                    row.Action === 'Buy' ? 'pos' : 'neg'
+                                  }
+                                >
+                                  {summary.label} · {row.Symbol}
+                                </span>
+                                <span>
+                                  {amountsMasked
+                                    ? MASKED_VALUE
+                                    : summary.shares}
+                                  {' · '}
+                                  {amountsMasked
+                                    ? MASKED_VALUE
+                                    : summary.amount}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </TooltipContent>
+                      </UiTooltip>
+                    ) : (
+                      <span className="dca-calendar-day" key={cell.key}>
+                        <span>{cell.day}</span>
+                      </span>
+                    )
+                  ) : (
+                    <span
+                      className="dca-calendar-empty"
+                      key={`empty-${index}`}
+                    />
+                  ),
+                )}
+              </div>
+            </TooltipProvider>
             <div className="dca-calendar-legend">
               <span>
                 <i className="buy" />
@@ -2393,6 +2530,43 @@ export default function Home() {
               <small>有动作的日期会标记</small>
             </div>
           </article>
+          <Dialog
+            open={Boolean(calendarDayDetails)}
+            onOpenChange={(open) => !open && setCalendarDayDetails(null)}
+          >
+            <DialogContent className="dca-calendar-dialog">
+              <DialogHeader>
+                <DialogTitle>{calendarDayDetails?.key} 交易记录</DialogTitle>
+                <DialogDescription>
+                  点击一笔交易查看完整原始记录。
+                </DialogDescription>
+              </DialogHeader>
+              <div className="dca-calendar-dialog-list">
+                {calendarDayDetails?.actions.map((row, index) => {
+                  const summary = calendarTradeSummary(row);
+                  return (
+                    <button
+                      type="button"
+                      key={index}
+                      onClick={() => {
+                        setCalendarDayDetails(null);
+                        setSelected(row);
+                      }}
+                    >
+                      <strong>
+                        {summary.label} · {row.Symbol}
+                      </strong>
+                      <span>
+                        {amountsMasked ? MASKED_VALUE : summary.shares}
+                        {' · '}
+                        {amountsMasked ? MASKED_VALUE : summary.amount}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </DialogContent>
+          </Dialog>
         </section>
 
         <section className="panel dca-plan-panel">
@@ -2547,7 +2721,13 @@ export default function Home() {
                 <p>持仓分析</p>
                 <h2>定投标的</h2>
               </div>
-              <span className="dca-note">按真实持仓与最新行情计算</span>
+              <span className="dca-note">
+                {dcaMarketWeightReady
+                  ? '表格按市值 · 饼图按成本'
+                  : dcaAnalysisRows.some((row) => row.quantity > 0)
+                    ? '行情未覆盖全部定投持仓，市值占比待更新'
+                    : '暂无定投持仓 · 饼图按成本'}
+              </span>
             </div>
             <div className="dca-monthly-average-grid">
               {dcaMonthlyAverages.map((item) => (
@@ -2574,14 +2754,23 @@ export default function Home() {
                     <th>真实现金成本</th>
                     <th>现价 / 今日</th>
                     <th>市值 / 浮盈亏</th>
-                    <th>成本占比</th>
+                    <th title="占定投篮子持仓市值的比例；所有相关持仓取得报价后显示，右侧圆环仍按成本计算">
+                      市值占比
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {dcaAnalysisRows.map((row) => {
-                    const share = dcaAnalysisCost
-                      ? (row.cost / dcaAnalysisCost) * 100
+                    const share = dcaMarketWeightReady
+                      ? (row.marketValue / dcaAnalysisMarket) * 100
                       : 0;
+                    const costShare = dcaAnalysisCost
+                      ? (row.cost / dcaAnalysisCost) * 100
+                      : null;
+                    const shareHint =
+                      dcaMarketWeightReady && costShare !== null
+                        ? `市值占比 ${share.toFixed(1)}%；成本占比 ${costShare.toFixed(1)}%；较成本 ${signedPercentagePoints(share - costShare)}`
+                        : undefined;
                     const assetColor = [
                       '#2e78c7',
                       '#9c5b32',
@@ -2643,19 +2832,18 @@ export default function Home() {
                                 {displayMoney(row.quote.current, 2)}
                               </strong>
                               <small
-                                className={
-                                  row.quote.changePercent >= 0 ? 'pos' : 'neg'
-                                }
+                                className={`market-change quote-change ${row.quote.change >= 0 ? 'pos' : 'neg'}`}
                               >
-                                {row.quote.changePercent >= 0 ? '+' : ''}
-                                {row.quote.changePercent.toFixed(2)}%
+                                <span>
+                                  {amountsMasked
+                                    ? MASKED_VALUE
+                                    : signedMoney(row.quote.change)}
+                                </span>
+                                <span>
+                                  {signedPercent(row.quote.changePercent)}
+                                </span>
                               </small>
-                              <small
-                                className="quote-time"
-                                title="Twelve Data 报价时间（本地时区）"
-                              >
-                                {displayQuoteTime(row.quote)}
-                              </small>
+                              <QuoteMeta quote={row.quote} />
                             </div>
                           ) : (
                             '—'
@@ -2667,9 +2855,17 @@ export default function Home() {
                               <strong>
                                 {displayMoney(row.marketValue, 2)}
                               </strong>
-                              <small className={row.pnl >= 0 ? 'pos' : 'neg'}>
-                                {row.pnl >= 0 ? '+' : ''}
-                                {displayMoney(row.pnl, 2)}
+                              <small
+                                className={`market-change ${row.pnl >= 0 ? 'pos' : 'neg'}`}
+                              >
+                                <span>
+                                  {amountsMasked
+                                    ? MASKED_VALUE
+                                    : signedMoney(row.pnl)}
+                                </span>
+                                <span>
+                                  {signedPercent((row.pnl / row.cost) * 100)}
+                                </span>
                               </small>
                             </div>
                           ) : (
@@ -2677,17 +2873,27 @@ export default function Home() {
                           )}
                         </td>
                         <td>
-                          <div className="share-cell">
+                          <div
+                            className="share-cell"
+                            title={shareHint}
+                            aria-label={shareHint}
+                            role={shareHint ? 'group' : undefined}
+                            tabIndex={shareHint ? 0 : undefined}
+                          >
                             <strong>
-                              {share ? `${share.toFixed(1)}%` : '—'}
+                              {dcaMarketWeightReady
+                                ? `${share.toFixed(1)}%`
+                                : '—'}
                             </strong>
                             <span>
-                              <i
-                                style={{
-                                  width: `${share}%`,
-                                  background: assetColor,
-                                }}
-                              />
+                              {share > 0 ? (
+                                <i
+                                  style={{
+                                    width: `${share}%`,
+                                    background: assetColor,
+                                  }}
+                                />
+                              ) : null}
                             </span>
                           </div>
                         </td>
@@ -3314,18 +3520,27 @@ export default function Home() {
                       <th className="numeric">真实现金成本</th>
                       <th className="numeric">现价 / 今日</th>
                       <th className="numeric">市值 / 浮盈亏</th>
-                      <th>成本占比</th>
+                      <th title="占全部持仓市值的比例（不含现金）；所有持仓取得报价后显示，饼图仍按成本计算">
+                        市值占比
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {typedHoldings.map((item) => {
-                      const share = holdings.totalCost
-                        ? (item.cost / holdings.totalCost) * 100
-                        : 0;
                       const quote = quotes[item.symbol];
                       const marketValue = quote
                         ? item.quantity * quote.current
                         : 0;
+                      const share = portfolioMarketWeightReady
+                        ? (marketValue / marketSummary.marketValue) * 100
+                        : 0;
+                      const costShare = holdings.totalCost
+                        ? (item.cost / holdings.totalCost) * 100
+                        : null;
+                      const shareHint =
+                        portfolioMarketWeightReady && costShare !== null
+                          ? `市值占比 ${share.toFixed(1)}%；成本占比 ${costShare.toFixed(1)}%；较成本 ${signedPercentagePoints(share - costShare)}`
+                          : undefined;
                       const unrealizedPnl = quote ? marketValue - item.cost : 0;
                       return (
                         <tr key={item.symbol}>
@@ -3380,19 +3595,18 @@ export default function Home() {
                                   {displayMoney(quote.current, 2)}
                                 </strong>
                                 <small
-                                  className={
-                                    quote.changePercent >= 0 ? 'pos' : 'neg'
-                                  }
+                                  className={`market-change quote-change ${quote.change >= 0 ? 'pos' : 'neg'}`}
                                 >
-                                  {quote.changePercent >= 0 ? '+' : ''}
-                                  {quote.changePercent.toFixed(2)}%
+                                  <span>
+                                    {amountsMasked
+                                      ? MASKED_VALUE
+                                      : signedMoney(quote.change)}
+                                  </span>
+                                  <span>
+                                    {signedPercent(quote.changePercent)}
+                                  </span>
                                 </small>
-                                <small
-                                  className="quote-time"
-                                  title="Twelve Data 报价时间（本地时区）"
-                                >
-                                  {displayQuoteTime(quote)}
-                                </small>
+                                <QuoteMeta quote={quote} />
                               </div>
                             ) : (
                               '—'
@@ -3403,10 +3617,20 @@ export default function Home() {
                               <div className="market-cell">
                                 <strong>{displayMoney(marketValue, 2)}</strong>
                                 <small
-                                  className={unrealizedPnl >= 0 ? 'pos' : 'neg'}
+                                  className={`market-change ${unrealizedPnl >= 0 ? 'pos' : 'neg'}`}
                                 >
-                                  {unrealizedPnl >= 0 ? '+' : ''}
-                                  {displayMoney(unrealizedPnl, 2)}
+                                  <span>
+                                    {amountsMasked
+                                      ? MASKED_VALUE
+                                      : signedMoney(unrealizedPnl)}
+                                  </span>
+                                  <span>
+                                    {item.cost
+                                      ? signedPercent(
+                                          (unrealizedPnl / item.cost) * 100,
+                                        )
+                                      : '—'}
+                                  </span>
                                 </small>
                               </div>
                             ) : (
@@ -3414,16 +3638,28 @@ export default function Home() {
                             )}
                           </td>
                           <td>
-                            <div className="share-cell">
-                              <strong>{share.toFixed(1)}%</strong>
+                            <div
+                              className="share-cell"
+                              title={shareHint}
+                              aria-label={shareHint}
+                              role={shareHint ? 'group' : undefined}
+                              tabIndex={shareHint ? 0 : undefined}
+                            >
+                              <strong>
+                                {portfolioMarketWeightReady
+                                  ? `${share.toFixed(1)}%`
+                                  : '—'}
+                              </strong>
                               <span>
-                                <i
-                                  style={{
-                                    width: `${share}%`,
-                                    background:
-                                      THEME_COLORS[item.industryTheme],
-                                  }}
-                                />
+                                {share > 0 ? (
+                                  <i
+                                    style={{
+                                      width: `${share}%`,
+                                      background:
+                                        THEME_COLORS[item.industryTheme],
+                                    }}
+                                  />
+                                ) : null}
                               </span>
                             </div>
                           </td>

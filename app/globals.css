@@ -917,25 +917,25 @@ input {
   border-collapse: collapse;
 }
 .holding-col-asset {
-  width: 21%;
+  width: 19%;
 }
 .holding-col-quantity {
-  width: 10%;
+  width: 9%;
 }
 .holding-col-cost {
-  width: 14%;
-}
-.holding-col-average {
-  width: 11%;
-}
-.holding-col-price {
   width: 13%;
 }
+.holding-col-average {
+  width: 10%;
+}
+.holding-col-price {
+  width: 18%;
+}
 .holding-col-market {
-  width: 17%;
+  width: 18%;
 }
 .holding-col-share {
-  width: 14%;
+  width: 13%;
 }
 .holdings-table th {
   height: 38px;
@@ -1030,13 +1030,55 @@ input {
   background: color-mix(in srgb, currentColor 13%, transparent);
   font-size: 10px;
 }
-.market-cell small.quote-time {
+.market-cell small.market-change {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2px 5px;
   padding: 0;
-  border-radius: 0;
+  background: transparent;
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.market-change span {
+  white-space: nowrap;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, currentColor 13%, transparent);
+}
+.market-cell small.quote-change {
+  flex-wrap: nowrap;
+  gap: 4px;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 700;
+}
+.quote-change span {
+  padding-inline: 4px;
+}
+.market-cell small.quote-meta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 0;
   background: transparent;
   color: var(--muted-foreground) !important;
   font-size: 9px;
   font-weight: 500;
+  white-space: nowrap;
+}
+.quote-source {
+  padding: 1px 4px;
+  border: 1px solid color-mix(in srgb, var(--muted-foreground) 30%, transparent);
+  border-radius: 4px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+.quote-time-text {
+  font-variant-numeric: tabular-nums;
 }
 .asset-type-badge {
   --asset-color: #73849a;
@@ -1064,6 +1106,11 @@ input {
   overflow: hidden;
   border-radius: 4px;
   background: var(--secondary);
+}
+.share-cell:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 .share-cell i {
   display: block;
@@ -2277,31 +2324,31 @@ input {
 }
 .dca-analysis-table th:nth-child(1),
 .dca-analysis-table td:nth-child(1) {
-  width: 21%;
+  width: 19%;
 }
 .dca-analysis-table th:nth-child(2),
 .dca-analysis-table td:nth-child(2) {
-  width: 10%;
+  width: 9%;
 }
 .dca-analysis-table th:nth-child(3),
 .dca-analysis-table td:nth-child(3) {
-  width: 11%;
+  width: 10%;
 }
 .dca-analysis-table th:nth-child(4),
 .dca-analysis-table td:nth-child(4) {
-  width: 14%;
+  width: 13%;
 }
 .dca-analysis-table th:nth-child(5),
 .dca-analysis-table td:nth-child(5) {
-  width: 13%;
+  width: 18%;
 }
 .dca-analysis-table th:nth-child(6),
 .dca-analysis-table td:nth-child(6) {
-  width: 17%;
+  width: 18%;
 }
 .dca-analysis-table th:nth-child(7),
 .dca-analysis-table td:nth-child(7) {
-  width: 14%;
+  width: 13%;
 }
 .dca-analysis-table th,
 .dca-analysis-table td {
@@ -2900,44 +2947,117 @@ input {
 }
 .dca-calendar-day,
 .dca-calendar-empty {
-  min-height: 31px;
+  min-height: 42px;
   border-radius: 7px;
 }
 .dca-calendar-day {
   position: relative;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 2px;
   border: 1px solid transparent;
   background: var(--panel-subtle);
   color: var(--foreground);
   font-size: 11px;
 }
-.dca-calendar-day:not(:disabled) {
+button.dca-calendar-day {
   cursor: pointer;
 }
-.dca-calendar-day:not(:disabled):hover {
+button.dca-calendar-day:hover,
+button.dca-calendar-day:focus-visible {
   border-color: var(--primary);
 }
-.dca-calendar-day i {
-  position: absolute;
-  right: 3px;
-  bottom: 2px;
-  font-size: 8px;
+.dca-calendar-markers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.dca-calendar-markers i {
+  font-size: 9px;
   font-style: normal;
   font-weight: 700;
+  line-height: 1;
+}
+.dca-calendar-markers .buy {
+  color: var(--positive);
+}
+.dca-calendar-markers .sell {
+  color: var(--negative);
 }
 .dca-calendar-day.buy {
-  background: color-mix(in srgb, var(--positive) 13%, var(--card));
-}
-.dca-calendar-day.buy i {
-  color: var(--positive);
+  background: color-mix(in srgb, var(--positive) 12%, var(--card));
 }
 .dca-calendar-day.sell {
   background: color-mix(in srgb, var(--negative) 11%, var(--card));
 }
-.dca-calendar-day.sell i {
-  color: var(--negative);
+.dca-calendar-day.buy.sell {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--positive) 12%, var(--card)) 50%,
+    color-mix(in srgb, var(--negative) 11%, var(--card)) 50%
+  );
+}
+.dca-calendar-tooltip {
+  display: flex;
+  max-height: 260px;
+  min-width: 230px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 7px;
+  overflow-y: auto;
+  font-size: 12px;
+}
+.dca-calendar-trade {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-top: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  padding-top: 5px;
+  white-space: nowrap;
+}
+.dca-calendar-trade .pos {
+  color: #61d7aa;
+}
+.dca-calendar-trade .neg {
+  color: #ff8996;
+}
+.dca-calendar-dialog {
+  max-width: 440px;
+}
+.dca-calendar-dialog-list {
+  display: grid;
+  max-height: min(55vh, 380px);
+  gap: 6px;
+  overflow-y: auto;
+}
+.dca-calendar-dialog-list button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-subtle);
+  padding: 10px 12px;
+  text-align: left;
+}
+.dca-calendar-dialog-list button:hover {
+  border-color: var(--primary);
+}
+.dca-calendar-dialog-list span {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+@media (max-width: 420px) {
+  .dca-calendar-dialog-list button {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
 }
 .dca-calendar-legend {
   display: flex;
@@ -3418,7 +3538,7 @@ input {
     content: '市值 / 浮盈亏';
   }
   .dca-analysis-table td:nth-child(7)::before {
-    content: '成本占比';
+    content: '市值占比';
   }
   .dca-transactions-table tbody td:nth-child(1)::before,
   .dca-all-transactions-panel tbody td:nth-child(1)::before {
@@ -3479,7 +3599,7 @@ input {
   }
   .dca-calendar-day,
   .dca-calendar-empty {
-    min-height: 31px;
+    min-height: 42px;
   }
 }
 @media (max-width: 420px) {
