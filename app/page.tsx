@@ -133,8 +133,11 @@ type MarketQuote = {
   changePercent: number;
   previousClose: number;
   timestamp: number;
-  source?: 'Twelve Data' | 'Finnhub';
+  source?: 'Twelve Data' | 'Finnhub' | 'Alpaca';
   isExtended?: boolean;
+  marketSession?: 'overnight' | 'premarket' | 'regular' | 'postmarket';
+  isDelayed?: boolean;
+  isIndicative?: boolean;
 };
 type CandleSeries = { closes: number[]; timestamps: number[] };
 type PairPoint = {
@@ -505,13 +508,38 @@ function displayQuoteTime(quote: MarketQuote) {
   }).format(new Date(quote.timestamp * 1000));
 }
 function QuoteMeta({ quote }: { quote: MarketQuote }) {
-  const source = quote.source === 'Finnhub' ? 'Finnhub' : 'Twelve';
-  const fullSource = quote.source === 'Finnhub' ? 'Finnhub' : 'Twelve Data';
+  const source =
+    quote.source === 'Alpaca'
+      ? quote.isIndicative
+        ? 'Alpaca 夜盘指示'
+        : quote.isDelayed
+          ? 'Alpaca 延迟'
+          : 'Alpaca'
+      : quote.source === 'Finnhub'
+        ? 'Finnhub'
+        : 'Twelve';
+  const fullSource =
+    quote.source === 'Alpaca'
+      ? 'Alpaca'
+      : quote.source === 'Finnhub'
+        ? 'Finnhub'
+        : 'Twelve Data';
+  const session =
+    quote.marketSession === 'overnight'
+      ? '夜盘指示价'
+      : quote.marketSession === 'premarket'
+        ? '盘前'
+        : quote.marketSession === 'postmarket'
+          ? '盘后'
+          : quote.isExtended
+            ? '盘前/盘后'
+            : '';
+  const delay = quote.isDelayed ? '延迟约 15 分钟' : '';
+  const detail = [fullSource, session, delay, displayQuoteTime(quote)]
+    .filter(Boolean)
+    .join(' · ');
   return (
-    <small
-      className="quote-meta"
-      title={`${fullSource} · ${quote.isExtended ? '盘前/盘后 · ' : ''}${displayQuoteTime(quote)}（本地时间）`}
-    >
+    <small className="quote-meta" title={`${detail}（本地时间）`}>
       <span className="quote-source">{source}</span>
       <span className="quote-time-text">{displayQuoteTime(quote)}</span>
     </small>
@@ -771,6 +799,7 @@ export default function Home() {
   const [marketSourceStatus, setMarketSourceStatus] = useState<{
     twelveDataConfigured: boolean;
     finnhubConfigured: boolean;
+    alpacaConfigured: boolean;
   } | null>(null);
   const [manualDialogOpen, setManualDialogOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] =
@@ -1824,6 +1853,7 @@ export default function Home() {
       const status = (await response.json()) as {
         twelveDataConfigured: boolean;
         finnhubConfigured: boolean;
+        alpacaConfigured: boolean;
       };
       setMarketSourceStatus(status);
     } catch {
@@ -2075,7 +2105,8 @@ export default function Home() {
           <b>交易与成本</b> 嘉信 JSON · 本地导入
         </span>
         <span>
-          <b>现价、今日涨跌与报价时间</b> Twelve Data 优先 · Finnhub 补充
+          <b>现价、今日涨跌与报价时间</b> Twelve Data 优先 · Finnhub 补充 ·
+          Alpaca 扩展时段
         </span>
         <span>
           <b>Bo Pair 历史日线</b> Twelve Data · 手动更新
@@ -2131,11 +2162,31 @@ export default function Home() {
                   : '检查中…'}
               </b>
             </div>
+            <div>
+              <span>
+                <strong>Alpaca</strong>
+                <small>夜盘指示价与延迟盘前/盘后</small>
+              </span>
+              <b
+                className={
+                  marketSourceStatus?.alpacaConfigured
+                    ? 'configured'
+                    : 'unconfigured'
+                }
+              >
+                {marketSourceStatus
+                  ? marketSourceStatus.alpacaConfigured
+                    ? '已配置'
+                    : '未配置'
+                  : '检查中…'}
+              </b>
+            </div>
           </div>
           <div className="market-strategy-note">
             <strong>当前策略</strong>
             <span>
-              Twelve Data 优先，请求失败或没有标的数据再由 Finnhub 补齐。
+              正常盘优先 Twelve Data，缺失时由 Finnhub 补齐；夜盘及盘前盘后由
+              Alpaca 覆盖有效的新报价。
             </span>
           </div>
           <div className="market-cache-row">
