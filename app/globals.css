@@ -816,18 +816,37 @@ input {
   align-items: center;
   gap: 6px;
 }
+.quote-mode-toggle {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--card);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.quote-mode-toggle:has([data-disabled]) {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
 .portfolio-overview-actions .quote-clear-button {
   width: 36px;
   min-width: 36px;
 }
-.portfolio-overview-actions button {
+.portfolio-overview-actions button:not([data-slot='switch']) {
   min-width: 118px;
   border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
   background: var(--primary);
   color: #fff;
   font-weight: 700;
 }
-.portfolio-overview-actions button:hover {
+.portfolio-overview-actions button:not([data-slot='switch']):hover {
   background: color-mix(in srgb, var(--primary) 88%, #fff);
 }
 .portfolio-overview-actions small {
@@ -3255,6 +3274,13 @@ button.dca-calendar-day:focus-visible {
   .dca-month-picker {
     grid-column: 1 / -1;
     width: 100%;
+  }
+  .dca-heading-actions > .quote-action-row {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+  .dca-heading-actions > .quote-action-row > button:first-child {
+    flex: 1;
   }
   .dca-month-picker input {
     flex: 1;

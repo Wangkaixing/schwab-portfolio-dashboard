@@ -29,19 +29,23 @@ ALPACA_API_SECRET_KEY=你的_alpaca_api_secret_key
 
 ### 行情源策略
 
-“更新行情”在正常盘优先使用 Twelve Data，无法返回的标的使用 Finnhub 补齐。配置 Alpaca 后，美东时间 20:00–04:00 使用免费夜盘指示报价，盘前和盘后使用免费的延迟 SIP 报价。Finnhub Key 可在 [Finnhub Dashboard](https://finnhub.io/dashboard) 申请。
+“更新行情”优先使用 Alpaca 批量获取所有标的，仅对 Alpaca 缺失的标的调用 Twelve Data，仍缺失时才使用 Finnhub 兜底。Bo Pair 历史日线同样优先通过 Alpaca 一次批量获取，Twelve Data 只补齐缺失序列。Finnhub Key 可在 [Finnhub Dashboard](https://finnhub.io/dashboard) 申请。
 
 ### Alpaca
 
-用于免费的扩展时段行情。在 [Alpaca](https://app.alpaca.markets/signup) 注册并创建 Paper Trading API Key，将 Key ID 和 Secret Key 分别填入 `ALPACA_API_KEY_ID` 和 `ALPACA_API_SECRET_KEY`。
+用于全时段批量报价和 Bo Pair 历史日线。在 [Alpaca](https://app.alpaca.markets/signup) 注册并创建 Paper Trading API Key，将 Key ID 和 Secret Key 分别填入 `ALPACA_API_KEY_ID` 和 `ALPACA_API_SECRET_KEY`。
 
+- 正常盘：IEX 免费实时报价，延迟 SIP 快照提供全市场参考和前收盘价
 - 夜盘（20:00–04:00 ET）：实时指示性最佳买卖价中间价
 - 盘前/盘后：全市场 SIP 报价，延迟约 15 分钟
+- Bo Pair：5 个标的的复权日线一次批量请求
 - 仅在报价时间戳距当前不超过 90 分钟时覆盖普通收盘价
+
+“更新行情”旁边的开关可在“延长时段”和“常规盘”两套独立缓存间即时切换，不会因为切换而请求 API。点击“更新行情”只刷新当前选中的缓存；延长时段模式包含盘前、盘后和夜盘，常规盘模式在盘外只返回常规交易时段收盘价。
 
 ### Twelve Data
 
-用于获取持仓现价、今日涨跌、报价时间，以及 Bo Pair 指标所需的历史日线。前往 [Twelve Data](https://twelvedata.com/) 创建 API Key，填入 `TWELVE_DATA_API_KEY`。
+用于在 Alpaca 缺失或请求失败时补充报价和 Bo Pair 历史日线。前往 [Twelve Data](https://twelvedata.com/) 创建 API Key，填入 `TWELVE_DATA_API_KEY`。
 
 - 页面入口：“更新行情”和“更新指标”
 - 项目接口：`POST /api/quotes` 和 `GET /api/pair-indicators`

@@ -33,6 +33,26 @@ type AlpacaQuotesResponse = {
   quotes?: Record<string, AlpacaQuote>;
 };
 
+type AlpacaTrade = {
+  p?: number;
+  t?: string;
+};
+
+type AlpacaBar = {
+  c?: number;
+  t?: string;
+};
+
+type AlpacaSnapshot = {
+  latestQuote?: AlpacaQuote;
+  latestTrade?: AlpacaTrade;
+  minuteBar?: AlpacaBar;
+  dailyBar?: AlpacaBar;
+  prevDailyBar?: AlpacaBar;
+};
+
+type AlpacaSnapshotsResponse = Record<string, AlpacaSnapshot | null>;
+
 type MarketSession = 'overnight' | 'premarket' | 'regular' | 'postmarket';
 
 type NormalizedQuote = {
@@ -103,6 +123,31 @@ function alpacaQuotePrice(quote: AlpacaQuote) {
   return 0;
 }
 
+function alpacaSnapshotPrice(snapshot: AlpacaSnapshot) {
+  const quotePrice = snapshot.latestQuote
+    ? alpacaQuotePrice(snapshot.latestQuote)
+    : 0;
+  if (quotePrice > 0) return quotePrice;
+  for (const value of [
+    snapshot.latestTrade?.p,
+    snapshot.minuteBar?.c,
+    snapshot.dailyBar?.c,
+  ]) {
+    const price = Number(value);
+    if (Number.isFinite(price) && price > 0) return price;
+  }
+  return 0;
+}
+
+function alpacaSnapshotTimestamp(snapshot: AlpacaSnapshot) {
+  return quoteTimestamp(
+    snapshot.latestQuote?.t ??
+      snapshot.latestTrade?.t ??
+      snapshot.minuteBar?.t ??
+      snapshot.dailyBar?.t,
+  );
+}
+
 export function GET() {
   return Response.json({
     twelveDataConfigured: Boolean(process.env.TWELVE_DATA_API_KEY),
@@ -110,7 +155,7 @@ export function GET() {
     alpacaConfigured: Boolean(
       process.env.ALPACA_API_KEY_ID && process.env.ALPACA_API_SECRET_KEY,
     ),
-    strategy: 'twelve-finnhub-with-alpaca-extended-hours',
+    strategy: 'alpaca-first-with-twelve-and-finnhub-fallbacks',
   });
 }
 
@@ -130,9 +175,12 @@ export async function POST(request: Request) {
     );
   }
 
-  let body: { symbols?: unknown };
+  let body: { symbols?: unknown; includeExtendedHours?: unknown };
   try {
-    body = (await request.json()) as { symbols?: unknown };
+    body = (await request.json()) as {
+      symbols?: unknown;
+      includeExtendedHours?: unknown;
+    };
   } catch {
     return Response.json({ error: '请求格式无效' }, { status: 400 });
   }
@@ -154,14 +202,133 @@ export async function POST(request: Request) {
     return Response.json({ quotes: {}, fetchedAt: new Date().toISOString() });
   }
 
+  const includeExtendedHours = body.includeExtendedHours !== false;
+  const quotes: Record<string, NormalizedQuote> = {};
+  const referenceCloses: Record<string, number> = {};
+  const marketSession = easternMarketSession();
+  const alpacaHeaders =
+    alpacaApiKeyId && alpacaApiSecretKey
+      ? {
+          'APCA-API-KEY-ID': alpacaApiKeyId,
+          'APCA-API-SECRET-KEY': alpacaApiSecretKey,
+        }
+      : null;
+
+  if (alpacaHeaders && (includeExtendedHours || marketSession === 'regular')) {
+    try {
+      const url = new URL('https://data.alpaca.markets/v2/stocks/snapshots');
+      url.searchParams.set('symbols', symbols.join(','));
+      url.searchParams.set('feed', 'delayed_sip');
+      const response = await fetch(url, {
+        headers: alpacaHeaders,
+        cache: 'no-store',
+      });
+      const snapshots = (await response.json()) as AlpacaSnapshotsResponse;
+      if (response.ok) {
+        const oldestAcceptedTimestamp = Math.floor(Date.now() / 1000) - 90 * 60;
+        for (const symbol of symbols) {
+          const snapshot = snapshots[symbol];
+          if (!snapshot) continue;
+          const dailyClose = Number(snapshot.dailyBar?.c);
+          const previousDailyClose = Number(snapshot.prevDailyBar?.c);
+          const referenceClose =
+            marketSession === 'overnight' || marketSession === null
+              ? dailyClose
+              : previousDailyClose;
+          if (Number.isFinite(referenceClose) && referenceClose > 0) {
+            referenceCloses[symbol] = referenceClose;
+          }
+
+          if (!includeExtendedHours && marketSession !== 'regular') continue;
+
+          const current = alpacaSnapshotPrice(snapshot);
+          const timestamp = alpacaSnapshotTimestamp(snapshot);
+          const isFresh =
+            marketSession === null || timestamp >= oldestAcceptedTimestamp;
+          if (current <= 0 || !timestamp || !isFresh) continue;
+          const previousClose = referenceCloses[symbol] || 0;
+          const change = previousClose ? current - previousClose : 0;
+          quotes[symbol] = {
+            current,
+            change,
+            changePercent: previousClose ? (change / previousClose) * 100 : 0,
+            previousClose,
+            timestamp,
+            source: 'Alpaca',
+            isExtended:
+              marketSession === 'overnight' ||
+              marketSession === 'premarket' ||
+              marketSession === 'postmarket',
+            marketSession: marketSession ?? undefined,
+            isDelayed: marketSession !== null,
+            isIndicative: false,
+          };
+        }
+      }
+    } catch {
+      // Twelve Data will fill symbols when the batch snapshot is unavailable.
+    }
+  }
+
+  const liveAlpacaFeed =
+    marketSession === 'regular'
+      ? 'iex'
+      : includeExtendedHours && marketSession === 'overnight'
+        ? 'overnight'
+        : null;
+  if (alpacaHeaders && liveAlpacaFeed && marketSession) {
+    try {
+      const url = new URL(
+        'https://data.alpaca.markets/v2/stocks/quotes/latest',
+      );
+      url.searchParams.set('symbols', symbols.join(','));
+      url.searchParams.set('feed', liveAlpacaFeed);
+      const response = await fetch(url, {
+        headers: alpacaHeaders,
+        cache: 'no-store',
+      });
+      const payload = (await response.json()) as AlpacaQuotesResponse;
+      if (response.ok && payload.quotes) {
+        const maximumAgeMinutes = liveAlpacaFeed === 'iex' ? 30 : 90;
+        const oldestAcceptedTimestamp =
+          Math.floor(Date.now() / 1000) - maximumAgeMinutes * 60;
+        for (const symbol of symbols) {
+          const alpacaQuote = payload.quotes[symbol];
+          if (!alpacaQuote) continue;
+          const current = alpacaQuotePrice(alpacaQuote);
+          const timestamp = quoteTimestamp(alpacaQuote.t);
+          if (current <= 0 || timestamp < oldestAcceptedTimestamp) continue;
+          const previousClose =
+            referenceCloses[symbol] || quotes[symbol]?.previousClose || 0;
+          const change = previousClose ? current - previousClose : 0;
+          quotes[symbol] = {
+            current,
+            change,
+            changePercent: previousClose ? (change / previousClose) * 100 : 0,
+            previousClose,
+            timestamp,
+            source: 'Alpaca',
+            isExtended: marketSession === 'overnight',
+            marketSession,
+            isDelayed: false,
+            isIndicative: marketSession === 'overnight',
+          };
+        }
+      }
+    } catch {
+      // Keep delayed SIP snapshots when the live subset is unavailable.
+    }
+  }
+
+  const missingAfterAlpaca = symbols.filter((symbol) => !quotes[symbol]);
   const twelveEntries = await Promise.all(
-    symbols.map(async (symbol) => {
+    missingAfterAlpaca.map(async (symbol) => {
       try {
         if (!twelveDataApiKey) return [symbol, null] as const;
         const url = new URL('https://api.twelvedata.com/quote');
         url.searchParams.set('symbol', symbol);
         url.searchParams.set('timezone', 'UTC');
-        url.searchParams.set('prepost', 'true');
+        url.searchParams.set('prepost', String(includeExtendedHours));
         url.searchParams.set('format', 'JSON');
         url.searchParams.set('apikey', twelveDataApiKey!);
         const response = await fetch(url, { cache: 'no-store' });
@@ -173,7 +340,8 @@ export async function POST(request: Request) {
         const extendedPrice = Number(quote.extended_price);
         const hasExtendedPrice =
           Number.isFinite(extendedPrice) && extendedPrice > 0;
-        const isExtended = quote.is_extended_hours === true;
+        const isExtended =
+          includeExtendedHours && quote.is_extended_hours === true;
         const current = isExtended && hasExtendedPrice ? extendedPrice : close;
         const previousClose = Number(quote.previous_close) || 0;
         if (!Number.isFinite(current) || current <= 0) {
@@ -221,9 +389,11 @@ export async function POST(request: Request) {
     }),
   );
 
-  const missingSymbols = twelveEntries
-    .filter(([, quote]) => quote === null)
-    .map(([symbol]) => symbol);
+  for (const [symbol, quote] of twelveEntries) {
+    if (quote) quotes[symbol] = quote;
+  }
+
+  const missingSymbols = symbols.filter((symbol) => !quotes[symbol]);
   const finnhubEntries = finnhubApiKey
     ? await Promise.all(
         missingSymbols.map(async (symbol) => {
@@ -255,64 +425,8 @@ export async function POST(request: Request) {
         }),
       )
     : [];
-  const entries = [
-    ...twelveEntries.filter(([, quote]) => quote !== null),
-    ...finnhubEntries.filter(([, quote]) => quote !== null),
-  ];
-
-  const quotes = Object.fromEntries(entries) as Record<string, NormalizedQuote>;
-  const marketSession = easternMarketSession();
-  const alpacaFeed =
-    marketSession === 'overnight'
-      ? 'overnight'
-      : marketSession === 'premarket' || marketSession === 'postmarket'
-        ? 'delayed_sip'
-        : null;
-
-  if (alpacaApiKeyId && alpacaApiSecretKey && alpacaFeed && marketSession) {
-    try {
-      const url = new URL(
-        'https://data.alpaca.markets/v2/stocks/quotes/latest',
-      );
-      url.searchParams.set('symbols', symbols.join(','));
-      url.searchParams.set('feed', alpacaFeed);
-      const response = await fetch(url, {
-        headers: {
-          'APCA-API-KEY-ID': alpacaApiKeyId,
-          'APCA-API-SECRET-KEY': alpacaApiSecretKey,
-        },
-        cache: 'no-store',
-      });
-      const payload = (await response.json()) as AlpacaQuotesResponse;
-      if (response.ok && payload.quotes) {
-        const oldestAcceptedTimestamp = Math.floor(Date.now() / 1000) - 90 * 60;
-        for (const symbol of symbols) {
-          const alpacaQuote = payload.quotes[symbol];
-          if (!alpacaQuote) continue;
-          const current = alpacaQuotePrice(alpacaQuote);
-          const timestamp = quoteTimestamp(alpacaQuote.t);
-          if (current <= 0 || timestamp < oldestAcceptedTimestamp) continue;
-          const baseQuote = quotes[symbol];
-          const previousClose =
-            baseQuote?.previousClose || baseQuote?.current || 0;
-          const change = previousClose ? current - previousClose : 0;
-          quotes[symbol] = {
-            current,
-            change,
-            changePercent: previousClose ? (change / previousClose) * 100 : 0,
-            previousClose,
-            timestamp,
-            source: 'Alpaca',
-            isExtended: true,
-            marketSession,
-            isDelayed: alpacaFeed === 'delayed_sip',
-            isIndicative: alpacaFeed === 'overnight',
-          };
-        }
-      }
-    } catch {
-      // Keep the regular-session quote when Alpaca is unavailable.
-    }
+  for (const [symbol, quote] of finnhubEntries) {
+    if (quote) quotes[symbol] = quote;
   }
 
   return Response.json({

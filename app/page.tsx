@@ -210,14 +210,21 @@ const ACTION_LABELS: Record<string, string> = {
 };
 const PAGE_SIZE = 8;
 const LAST_IMPORT_KEY = 'schwab-dashboard:last-json-import';
-const LAST_QUOTES_KEY = 'schwab-dashboard:last-market-quotes:v2';
+const LEGACY_QUOTES_KEY = 'schwab-dashboard:last-market-quotes:v2';
+const EXTENDED_QUOTES_KEY = 'schwab-dashboard:market-quotes:extended:v1';
+const REGULAR_QUOTES_KEY = 'schwab-dashboard:market-quotes:regular:v1';
 const UNDO_TRANSACTION_KEY = 'schwab-dashboard:transaction-undo';
 const PAIR_INDICATORS_KEY = 'schwab-dashboard:bo-pair-indicators:v2';
+const EXTENDED_HOURS_KEY = 'schwab-dashboard:include-extended-hours';
 const PAIR_SYMBOLS = ['CGDV', 'VTV', 'SCHD', 'KO'] as const;
 const PAIR_LENGTH = 35;
 const PAIR_ARM_THRESHOLD = 1;
 const DCA_PLANS_KEY = 'schwab-dashboard:dca-plans:v4';
 const THEME_KEY = 'schwab-dashboard:theme';
+
+function quoteCacheKey(includeExtendedHours: boolean) {
+  return includeExtendedHours ? EXTENDED_QUOTES_KEY : REGULAR_QUOTES_KEY;
+}
 
 function isSchwabExport(value: unknown): value is SchwabExport {
   const candidate = value as Partial<SchwabExport> | null;
@@ -796,6 +803,7 @@ export default function Home() {
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [quoteClearDialogOpen, setQuoteClearDialogOpen] = useState(false);
   const [marketSettingsOpen, setMarketSettingsOpen] = useState(false);
+  const [includeExtendedHours, setIncludeExtendedHours] = useState(true);
   const [marketSourceStatus, setMarketSourceStatus] = useState<{
     twelveDataConfigured: boolean;
     finnhubConfigured: boolean;
@@ -946,7 +954,20 @@ export default function Home() {
   }, []);
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(LAST_QUOTES_KEY);
+      const savedMode = localStorage.getItem(EXTENDED_HOURS_KEY);
+      const extended = savedMode === null ? true : savedMode === 'true';
+      const activeKey = quoteCacheKey(extended);
+      let raw = localStorage.getItem(activeKey);
+
+      if (!raw && extended) {
+        raw = localStorage.getItem(LEGACY_QUOTES_KEY);
+        if (raw) {
+          localStorage.setItem(activeKey, raw);
+          localStorage.removeItem(LEGACY_QUOTES_KEY);
+        }
+      }
+
+      setIncludeExtendedHours(extended);
       if (!raw) return;
       const remembered = JSON.parse(raw) as {
         quotes?: Record<string, MarketQuote>;
@@ -957,7 +978,7 @@ export default function Home() {
         setQuotesUpdatedAt(remembered.updatedAt || '上次更新');
       }
     } catch {
-      // Ignore invalid or unavailable browser storage.
+      // Keep defaults when browser storage is invalid or unavailable.
     }
   }, []);
   useEffect(() => {
@@ -1862,8 +1883,7 @@ export default function Home() {
   }
   function clearQuoteCache() {
     try {
-      localStorage.removeItem(LAST_QUOTES_KEY);
-      localStorage.removeItem('schwab-dashboard:last-market-quotes');
+      localStorage.removeItem(quoteCacheKey(includeExtendedHours));
     } catch {
       // The visible state can still be cleared when storage is unavailable.
     }
@@ -1871,6 +1891,28 @@ export default function Home() {
     setQuotesUpdatedAt('尚未更新');
     setQuoteRefreshStatus('');
     setQuotesError('');
+  }
+  function switchQuoteCache(checked: boolean) {
+    setIncludeExtendedHours(checked);
+    setQuotes({});
+    setQuotesUpdatedAt('尚未更新');
+    setQuoteRefreshStatus('');
+    setQuotesError('');
+    try {
+      localStorage.setItem(EXTENDED_HOURS_KEY, String(checked));
+      const raw = localStorage.getItem(quoteCacheKey(checked));
+      if (!raw) return;
+      const remembered = JSON.parse(raw) as {
+        quotes?: Record<string, MarketQuote>;
+        updatedAt?: string;
+      };
+      if (remembered.quotes && typeof remembered.quotes === 'object') {
+        setQuotes(remembered.quotes);
+        setQuotesUpdatedAt(remembered.updatedAt || '上次更新');
+      }
+    } catch {
+      // The selected mode still applies to this browser tab.
+    }
   }
   async function refreshQuotes() {
     const symbols = holdings.positions.map((item) => item.symbol);
@@ -1881,7 +1923,7 @@ export default function Home() {
       const response = await fetch('/api/quotes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbols }),
+        body: JSON.stringify({ symbols, includeExtendedHours }),
       });
       const payload = (await response.json()) as {
         quotes?: Record<string, MarketQuote>;
@@ -1910,7 +1952,7 @@ export default function Home() {
           : `${freshCount} 个最新`,
       );
       localStorage.setItem(
-        LAST_QUOTES_KEY,
+        quoteCacheKey(includeExtendedHours),
         JSON.stringify({ quotes: mergedQuotes, updatedAt }),
       );
     } catch (reason) {
@@ -2105,11 +2147,11 @@ export default function Home() {
           <b>交易与成本</b> 嘉信 JSON · 本地导入
         </span>
         <span>
-          <b>现价、今日涨跌与报价时间</b> Twelve Data 优先 · Finnhub 补充 ·
-          Alpaca 扩展时段
+          <b>现价、今日涨跌与报价时间</b> Alpaca 批量优先 · Twelve Data 补充 ·
+          Finnhub 兜底
         </span>
         <span>
-          <b>Bo Pair 历史日线</b> Twelve Data · 手动更新
+          <b>Bo Pair 历史日线</b> Alpaca 批量优先 · Twelve Data 补充
         </span>
         <span>
           <b>定投计划</b> 当前浏览器本地保存
@@ -2127,7 +2169,7 @@ export default function Home() {
             <div>
               <span>
                 <strong>Twelve Data</strong>
-                <small>首选行情源</small>
+                <small>Alpaca 缺失时补充</small>
               </span>
               <b
                 className={
@@ -2146,7 +2188,7 @@ export default function Home() {
             <div>
               <span>
                 <strong>Finnhub</strong>
-                <small>缺失标的自动补充</small>
+                <small>报价的最终兜底</small>
               </span>
               <b
                 className={
@@ -2165,7 +2207,7 @@ export default function Home() {
             <div>
               <span>
                 <strong>Alpaca</strong>
-                <small>夜盘指示价与延迟盘前/盘后</small>
+                <small>批量报价与 Bo Pair 历史日线</small>
               </span>
               <b
                 className={
@@ -2185,8 +2227,8 @@ export default function Home() {
           <div className="market-strategy-note">
             <strong>当前策略</strong>
             <span>
-              正常盘优先 Twelve Data，缺失时由 Finnhub 补齐；夜盘及盘前盘后由
-              Alpaca 覆盖有效的新报价。
+              Alpaca 优先批量获取全时段行情；只对缺失标的调用 Twelve
+              Data，仍缺失时再由 Finnhub 兜底。
             </span>
           </div>
           <div className="market-cache-row">
@@ -2229,9 +2271,11 @@ export default function Home() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>确认清除现价缓存？</AlertDialogTitle>
+            <AlertDialogTitle>确认清除当前行情缓存？</AlertDialogTitle>
             <AlertDialogDescription>
-              这会清除当前浏览器保存的现价、今日涨跌及报价时间。交易记录、持仓成本和定投计划不会受到影响，之后可重新点击“更新行情”获取报价。
+              这只会清除当前所选模式（
+              {includeExtendedHours ? '延长时段' : '常规盘'}
+              ）保存的现价、今日涨跌及报价时间，另一套行情缓存不受影响。之后可重新点击“更新行情”获取报价。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -2297,25 +2341,37 @@ export default function Home() {
                 <ChevronRight />
               </Button>
             </div>
-            <Button
-              variant="outline"
-              onClick={refreshQuotes}
-              disabled={!holdings.positions.length || quotesLoading}
-            >
-              <RefreshCcw className={quotesLoading ? 'is-spinning' : ''} />
-              更新行情
-            </Button>
-            <Button
-              className="quote-clear-button"
-              variant="outline"
-              size="icon"
-              aria-label="清除现价缓存"
-              title="清除现价缓存"
-              disabled={!Object.keys(quotes).length || quotesLoading}
-              onClick={() => setQuoteClearDialogOpen(true)}
-            >
-              <Trash2 />
-            </Button>
+            <div className="quote-action-row">
+              <Button
+                variant="outline"
+                onClick={refreshQuotes}
+                disabled={!holdings.positions.length || quotesLoading}
+              >
+                <RefreshCcw className={quotesLoading ? 'is-spinning' : ''} />
+                更新行情
+              </Button>
+              <label className="quote-mode-toggle">
+                <Switch
+                  size="sm"
+                  checked={includeExtendedHours}
+                  disabled={quotesLoading}
+                  onCheckedChange={switchQuoteCache}
+                  aria-label="切换延长时段行情缓存"
+                />
+                <span>{includeExtendedHours ? '延长时段' : '常规盘'}</span>
+              </label>
+              <Button
+                className="quote-clear-button"
+                variant="outline"
+                size="icon"
+                aria-label="清除当前行情缓存"
+                title="清除当前行情缓存"
+                disabled={!Object.keys(quotes).length || quotesLoading}
+                onClick={() => setQuoteClearDialogOpen(true)}
+              >
+                <Trash2 />
+              </Button>
+            </div>
             <Button variant="outline" onClick={() => setDcaSettingsOpen(true)}>
               <Settings2 /> 设置计划
             </Button>
@@ -3496,12 +3552,22 @@ export default function Home() {
                     />
                     {quotesLoading ? '更新中…' : '更新行情'}
                   </Button>
+                  <label className="quote-mode-toggle">
+                    <Switch
+                      size="sm"
+                      checked={includeExtendedHours}
+                      disabled={quotesLoading}
+                      onCheckedChange={switchQuoteCache}
+                      aria-label="切换延长时段行情缓存"
+                    />
+                    <span>{includeExtendedHours ? '延长时段' : '常规盘'}</span>
+                  </label>
                   <Button
                     className="quote-clear-button"
                     variant="outline"
                     size="icon"
-                    aria-label="清除现价缓存"
-                    title="清除现价缓存"
+                    aria-label="清除当前行情缓存"
+                    title="清除当前行情缓存"
                     disabled={!Object.keys(quotes).length || quotesLoading}
                     onClick={() => setQuoteClearDialogOpen(true)}
                   >
