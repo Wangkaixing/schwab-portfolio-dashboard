@@ -917,7 +917,7 @@ input {
 }
 .holdings-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(360px, 0.75fr);
+  grid-template-columns: minmax(0, 1.85fr) minmax(320px, 0.65fr);
   gap: 12px;
   margin-top: 17px;
   align-items: stretch;
@@ -931,30 +931,33 @@ input {
 }
 .holdings-table {
   width: 100%;
-  min-width: 820px;
+  min-width: 940px;
   table-layout: fixed;
   border-collapse: collapse;
 }
 .holding-col-asset {
-  width: 19%;
+  width: 17%;
 }
 .holding-col-quantity {
-  width: 9%;
+  width: 8%;
 }
 .holding-col-cost {
-  width: 13%;
+  width: 11%;
 }
 .holding-col-average {
-  width: 10%;
+  width: 9%;
+}
+.holding-col-net-cost {
+  width: 13%;
 }
 .holding-col-price {
-  width: 18%;
+  width: 15%;
 }
 .holding-col-market {
-  width: 18%;
+  width: 16%;
 }
 .holding-col-share {
-  width: 13%;
+  width: 11%;
 }
 .holdings-table th {
   height: 38px;
@@ -989,6 +992,16 @@ input {
 }
 .holdings-table td:first-child strong {
   font: 720 15px var(--font-geist-mono);
+}
+.net-cost-cell strong,
+.net-cost-cell small {
+  display: block;
+}
+.net-cost-cell small {
+  margin-top: 2px;
+  color: var(--muted-foreground);
+  font-size: 10px;
+  font-weight: 500;
 }
 .holding-identity {
   display: flex;
@@ -1993,7 +2006,14 @@ input {
   .filter-strip,
   .error-banner,
   .table-footer,
-  .data-row > span:last-child {
+  .data-row > span:last-child,
+  [data-slot='dropdown-menu-content'],
+  [data-slot='dropdown-menu-sub-content'],
+  [data-slot='dialog-overlay'],
+  [data-slot='dialog-content'],
+  [data-slot='alert-dialog-overlay'],
+  [data-slot='alert-dialog-content'],
+  [data-slot='tooltip-content'] {
     display: none !important;
   }
 
@@ -2106,6 +2126,7 @@ input {
 }
 .dca-page {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 .dca-heading {
@@ -2323,7 +2344,7 @@ input {
 }
 .dca-analysis-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(330px, 0.75fr);
+  grid-template-columns: minmax(0, 1.85fr) minmax(300px, 0.65fr);
   gap: 12px;
   margin-top: 15px;
   align-items: stretch;
@@ -2336,38 +2357,42 @@ input {
 }
 .dca-analysis-table {
   width: 100%;
-  min-width: 820px;
+  min-width: 940px;
   table-layout: fixed;
   border-collapse: collapse;
   font-size: 12px;
 }
 .dca-analysis-table th:nth-child(1),
 .dca-analysis-table td:nth-child(1) {
-  width: 19%;
+  width: 17%;
 }
 .dca-analysis-table th:nth-child(2),
 .dca-analysis-table td:nth-child(2) {
-  width: 9%;
+  width: 8%;
 }
 .dca-analysis-table th:nth-child(3),
 .dca-analysis-table td:nth-child(3) {
-  width: 10%;
+  width: 9%;
 }
 .dca-analysis-table th:nth-child(4),
 .dca-analysis-table td:nth-child(4) {
-  width: 13%;
+  width: 11%;
 }
 .dca-analysis-table th:nth-child(5),
 .dca-analysis-table td:nth-child(5) {
-  width: 18%;
+  width: 13%;
 }
 .dca-analysis-table th:nth-child(6),
 .dca-analysis-table td:nth-child(6) {
-  width: 18%;
+  width: 15%;
 }
 .dca-analysis-table th:nth-child(7),
 .dca-analysis-table td:nth-child(7) {
-  width: 13%;
+  width: 16%;
+}
+.dca-analysis-table th:nth-child(8),
+.dca-analysis-table td:nth-child(8) {
+  width: 11%;
 }
 .dca-analysis-table th,
 .dca-analysis-table td {
@@ -2375,8 +2400,8 @@ input {
 }
 .dca-asset-identity {
   min-width: 0;
-  justify-content: center;
-  text-align: center;
+  justify-content: flex-start;
+  text-align: left;
 }
 .dca-asset-identity > div {
   min-width: 0;
@@ -2394,7 +2419,7 @@ input {
   color: var(--muted-foreground);
   font-size: 11px;
   text-overflow: ellipsis;
-  text-align: center;
+  text-align: left;
   white-space: nowrap;
 }
 .dca-analysis-table th {
@@ -2407,7 +2432,7 @@ input {
 }
 .dca-analysis-table th:first-child,
 .dca-analysis-table td:first-child {
-  text-align: center;
+  text-align: left;
 }
 .dca-analysis-table td {
   padding: 11px 4px;
@@ -2419,6 +2444,7 @@ input {
   font-family: var(--font-geist-mono);
 }
 .dca-analysis-side {
+  min-width: 0;
   display: grid;
   grid-template-columns: 1fr;
   align-items: center;
@@ -2426,9 +2452,16 @@ input {
   margin-top: 15px;
 }
 .dca-insights-panel {
+  min-width: 0;
+  overflow: hidden;
   padding: 20px;
 }
+.dca-insights-panel .panel-head {
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
 .dca-performance-hero {
+  min-width: 0;
   padding: 17px 18px;
   border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border));
   border-radius: 10px;
@@ -2441,7 +2474,9 @@ input {
 }
 .dca-performance-hero > strong {
   display: block;
+  max-width: 100%;
   margin-top: 4px;
+  overflow-wrap: anywhere;
   font: 720 26px var(--font-geist-mono);
   letter-spacing: -0.045em;
 }
@@ -2478,12 +2513,13 @@ input {
 }
 .dca-allocation-layout {
   display: grid;
-  grid-template-columns: minmax(155px, 0.9fr) minmax(145px, 1.1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(145px, 100%), 1fr));
   align-items: center;
   gap: 8px;
   padding: 8px 0;
 }
 .dca-cost-chart-wrap {
+  min-width: 0;
   position: relative;
 }
 .dca-cost-chart {
@@ -2514,12 +2550,14 @@ input {
   text-align: center;
 }
 .dca-cost-legend {
+  min-width: 0;
   display: grid;
   gap: 2px;
   color: var(--muted-foreground);
   font-size: 11px;
 }
 .dca-cost-legend button {
+  min-width: 0;
   display: grid;
   grid-template-columns: 8px 1fr auto;
   align-items: center;
@@ -2546,12 +2584,20 @@ input {
   border-radius: 50%;
 }
 .dca-cost-legend button strong {
+  min-width: 0;
+  overflow: hidden;
   color: var(--foreground);
   font: 650 11px var(--font-geist-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .dca-cost-legend button small {
+  min-width: 0;
+  overflow: hidden;
   grid-column: 2 / 4;
   font: 10px var(--font-geist-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .dca-legend-empty {
   color: var(--muted-foreground);
@@ -2560,6 +2606,8 @@ input {
 }
 .dca-included-note {
   display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
   justify-content: space-between;
   padding-top: 10px;
   border-top: 1px solid var(--border);
@@ -3165,40 +3213,96 @@ button.dca-calendar-day:focus-visible {
 }
 .dca-settings-list {
   display: grid;
+  min-height: 0;
   gap: 9px;
   margin: 5px 0 8px;
+  padding-right: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .dca-settings-dialog {
-  width: min(calc(100vw - 32px), 720px) !important;
-  max-width: 720px !important;
+  width: min(calc(100vw - 32px), 920px) !important;
+  max-width: 920px !important;
   max-height: min(86vh, 720px);
-  overflow-y: auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
 }
 .dca-settings-list > div {
   display: grid;
-  align-items: end;
   gap: 10px;
-  padding: 11px;
+  padding: 12px;
   border: 1px solid var(--border);
   border-radius: 9px;
   background: var(--panel-subtle);
 }
-.dca-settings-list > .dca-settings-primary {
-  grid-template-columns: minmax(120px, 1fr) 150px 150px;
-}
-.dca-settings-list > .dca-settings-secondary {
-  grid-template-columns: minmax(120px, 1fr) repeat(3, 150px);
-}
-.dca-settings-list > div > span {
+.dca-settings-plan-head {
   display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.dca-settings-plan-head > span {
+  display: flex;
+  min-width: 0;
+  flex: 1;
   flex-direction: column;
-  align-self: center;
+}
+.dca-settings-plan-head > button {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  color: var(--negative);
+}
+.dca-plan-order-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.dca-plan-order-actions button {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+}
+.dca-settings-fields {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  align-items: end;
+  gap: 10px;
+}
+.dca-settings-fields > label {
+  min-width: 0;
+}
+.dca-field-name {
+  grid-column: span 4;
+}
+.dca-field-type {
+  grid-column: span 3;
+}
+.dca-settings-primary .dca-field-symbol-primary {
+  grid-column: span 5;
+}
+.dca-settings-secondary .dca-field-name,
+.dca-settings-secondary .dca-field-type,
+.dca-settings-secondary .dca-field-symbol {
+  grid-column: span 3;
+}
+.dca-field-amount,
+.dca-field-start,
+.dca-field-duration {
+  grid-column: span 4;
+}
+.dca-settings-fields.has-fixed-duration .dca-field-amount,
+.dca-settings-fields.has-fixed-duration .dca-field-start,
+.dca-settings-fields.has-fixed-duration .dca-field-duration,
+.dca-field-months {
+  grid-column: span 3;
+}
+.dca-settings-fields [data-slot='native-select-wrapper'] {
+  width: 100%;
 }
 .dca-settings-list .dca-plan-enabled {
   display: flex;
   align-items: center;
   gap: 7px;
-  margin-top: 8px;
   color: var(--muted-foreground);
   font-size: 11px;
 }
@@ -3214,6 +3318,17 @@ button.dca-calendar-day:focus-visible {
   margin-bottom: 4px;
   color: var(--muted-foreground);
   font-size: 12px;
+}
+@media (max-width: 1180px) {
+  .dca-analysis-layout {
+    min-width: 0;
+    max-width: 100%;
+    grid-template-columns: 1fr;
+  }
+  .dca-analysis-layout > * {
+    min-width: 0;
+    max-width: 100%;
+  }
 }
 @media (max-width: 1050px) {
   .dca-plan-grid {
@@ -3293,6 +3408,24 @@ button.dca-calendar-day:focus-visible {
     padding-inline: 8px;
     overflow: hidden;
   }
+  .dca-settings-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .dca-field-name,
+  .dca-field-type,
+  .dca-settings-secondary .dca-field-symbol,
+  .dca-field-amount,
+  .dca-field-start,
+  .dca-field-duration,
+  .dca-settings-fields.has-fixed-duration .dca-field-amount,
+  .dca-settings-fields.has-fixed-duration .dca-field-start,
+  .dca-settings-fields.has-fixed-duration .dca-field-duration,
+  .dca-field-months {
+    grid-column: span 1;
+  }
+  .dca-settings-primary .dca-field-symbol-primary {
+    grid-column: span 2;
+  }
   .dca-source-note {
     width: calc(100% - 24px);
     display: grid;
@@ -3366,14 +3499,6 @@ button.dca-calendar-day:focus-visible {
   .dca-summary-card {
     min-height: 112px;
   }
-  .dca-settings-list > .dca-settings-primary,
-  .dca-settings-list > .dca-settings-secondary {
-    grid-template-columns: 1fr 1fr;
-  }
-  .dca-settings-list > div > span {
-    grid-column: span 2;
-  }
-
   .dca-plan-card {
     min-width: 0;
     padding: 14px;
@@ -3558,12 +3683,15 @@ button.dca-calendar-day:focus-visible {
     content: '真实现金成本';
   }
   .dca-analysis-table td:nth-child(5)::before {
-    content: '现价 / 今日';
+    content: '做 T 后净成本';
   }
   .dca-analysis-table td:nth-child(6)::before {
-    content: '市值 / 浮盈亏';
+    content: '现价 / 今日';
   }
   .dca-analysis-table td:nth-child(7)::before {
+    content: '市值 / 浮盈亏';
+  }
+  .dca-analysis-table td:nth-child(8)::before {
     content: '市值占比';
   }
   .dca-transactions-table tbody td:nth-child(1)::before,
@@ -3659,11 +3787,26 @@ button.dca-calendar-day:focus-visible {
   .dca-readonly-label {
     text-align: left;
   }
-  .dca-settings-list > .dca-settings-primary,
-  .dca-settings-list > .dca-settings-secondary {
+  .dca-settings-fields {
     grid-template-columns: 1fr;
   }
-  .dca-settings-list > div > span {
-    grid-column: auto;
+  .dca-field-name,
+  .dca-field-type,
+  .dca-settings-primary .dca-field-symbol-primary,
+  .dca-settings-secondary .dca-field-symbol,
+  .dca-field-amount,
+  .dca-field-start,
+  .dca-field-duration,
+  .dca-settings-fields.has-fixed-duration .dca-field-amount,
+  .dca-settings-fields.has-fixed-duration .dca-field-start,
+  .dca-settings-fields.has-fixed-duration .dca-field-duration,
+  .dca-field-months {
+    grid-column: span 1;
+  }
+  .dca-settings-plan-head {
+    flex-wrap: wrap;
+  }
+  .dca-settings-dialog [data-slot='dialog-footer'] {
+    flex-wrap: wrap;
   }
 }

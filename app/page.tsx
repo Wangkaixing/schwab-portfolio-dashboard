@@ -4,6 +4,8 @@ import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   CalendarDays,
   ChevronsUpDown,
   Download,
@@ -167,26 +169,50 @@ type ManualTransaction = {
   amount: string;
 };
 type DcaPlan = {
+  id: string;
+  name: string;
   symbol: string;
   secondarySymbol?: string;
   enabled?: boolean;
   monthlyTarget: number;
   priority: 'primary' | 'secondary';
+  startMonth: string;
+  durationMonths: number | null;
 };
 type DcaPlanExport = {
   format: 'schwab-dashboard-dca-plan';
-  version: 1;
+  version: 1 | 2;
   exportedAt: string;
   plans: DcaPlan[];
 };
 const DEFAULT_DCA_PLANS: DcaPlan[] = [
-  { symbol: 'QLD', monthlyTarget: 2666, priority: 'primary' },
-  { symbol: 'IBIT', monthlyTarget: 888, priority: 'primary' },
   {
+    id: 'default-qld',
+    name: 'QLD 定投',
+    symbol: 'QLD',
+    monthlyTarget: 2666,
+    priority: 'primary',
+    startMonth: '',
+    durationMonths: null,
+  },
+  {
+    id: 'default-ibit',
+    name: 'IBIT 定投',
+    symbol: 'IBIT',
+    monthlyTarget: 888,
+    priority: 'primary',
+    startMonth: '',
+    durationMonths: null,
+  },
+  {
+    id: 'default-defensive',
+    name: '防御类',
     symbol: 'CGDV',
     secondarySymbol: 'SCHD',
     monthlyTarget: 888,
     priority: 'secondary',
+    startMonth: '',
+    durationMonths: null,
   },
 ];
 const EMPTY_MANUAL_TRANSACTION: ManualTransaction = {
@@ -238,13 +264,14 @@ function isDcaPlanExport(value: unknown): value is DcaPlanExport {
   const candidate = value as Partial<DcaPlanExport> | null;
   return Boolean(
     candidate?.format === 'schwab-dashboard-dca-plan' &&
-    candidate?.version === 1 &&
+    (candidate?.version === 1 || candidate?.version === 2) &&
     Array.isArray(candidate?.plans) &&
-    candidate.plans.length === DEFAULT_DCA_PLANS.length &&
+    candidate.plans.length <= 50 &&
     candidate.plans.every(
       (plan) =>
         plan &&
         typeof plan.symbol === 'string' &&
+        (plan.name === undefined || typeof plan.name === 'string') &&
         (plan.secondarySymbol === undefined ||
           typeof plan.secondarySymbol === 'string') &&
         Number.isFinite(Number(plan.monthlyTarget)),
@@ -252,27 +279,82 @@ function isDcaPlanExport(value: unknown): value is DcaPlanExport {
   );
 }
 function normalizeDcaPlans(plans: DcaPlan[]): DcaPlan[] {
-  return DEFAULT_DCA_PLANS.map((fallback, index) => {
-    const plan = plans[index] ?? fallback;
+  return plans.slice(0, 50).map((plan, index) => {
+    const fallback = DEFAULT_DCA_PLANS[index];
     const legacyDefensive = plan.symbol === 'DEFENSIVE';
+    const priority =
+      plan.priority === 'secondary' || legacyDefensive
+        ? 'secondary'
+        : 'primary';
+    const duration = Number(plan.durationMonths);
+    const normalizedDuration =
+      plan.durationMonths === null || plan.durationMonths === undefined
+        ? null
+        : Math.min(1200, Math.max(1, Math.floor(duration || 1)));
+    const normalizedStartMonth =
+      typeof plan.startMonth === 'string' &&
+      /^\d{4}-(0[1-9]|1[0-2])$/.test(plan.startMonth)
+        ? plan.startMonth
+        : '';
     return {
-      symbol: (legacyDefensive ? 'CGDV' : (plan.symbol ?? fallback.symbol))
+      id:
+        typeof plan.id === 'string' && plan.id.trim()
+          ? plan.id.trim()
+          : `plan-${index + 1}`,
+      name:
+        typeof plan.name === 'string' && plan.name.trim()
+          ? plan.name.trim().slice(0, 30)
+          : legacyDefensive
+            ? '防御类'
+            : fallback?.name ||
+              `${plan.symbol?.trim().toUpperCase() || '未命名'} 定投`,
+      symbol: (legacyDefensive
+        ? 'CGDV'
+        : (plan.symbol ?? fallback?.symbol ?? '')
+      )
         .trim()
         .toUpperCase(),
       secondarySymbol:
-        index === 2
+        priority === 'secondary'
           ? (legacyDefensive
               ? 'SCHD'
-              : (plan.secondarySymbol ?? fallback.secondarySymbol ?? '')
+              : (plan.secondarySymbol ?? fallback?.secondarySymbol ?? '')
             )
               .trim()
               .toUpperCase()
           : undefined,
       enabled: plan.enabled !== false,
       monthlyTarget: Math.max(0, Number(plan.monthlyTarget) || 0),
-      priority: index === 2 ? 'secondary' : 'primary',
+      priority,
+      startMonth: normalizedStartMonth,
+      durationMonths: normalizedDuration,
     };
   });
+}
+
+function monthDistance(fromMonth: string, toMonth: string) {
+  const [fromYear, fromNumber] = fromMonth.split('-').map(Number);
+  const [toYear, toNumber] = toMonth.split('-').map(Number);
+  return (toYear - fromYear) * 12 + toNumber - fromNumber;
+}
+
+function dcaPlanAppliesToMonth(
+  plan: DcaPlan,
+  month: string,
+  inferredStartMonth = '',
+) {
+  if (
+    plan.enabled === false ||
+    ![plan.symbol, plan.secondarySymbol].some(Boolean)
+  )
+    return false;
+  const startMonth = plan.startMonth || inferredStartMonth;
+  if (!startMonth) return true;
+  const elapsed = monthDistance(startMonth, month);
+  return (
+    elapsed >= 0 &&
+    (plan.durationMonths === null || elapsed < plan.durationMonths)
+  );
 }
 
 function rememberImport(
@@ -676,6 +758,7 @@ function portfolioLedger(rows: Transaction[]) {
     string,
     { quantity: number; cashCostPerShare: number; description: string }[]
   >();
+  const netCashCost = new Map<string, number>();
   const realized = new Map<
     string,
     {
@@ -695,11 +778,16 @@ function portfolioLedger(rows: Transaction[]) {
       const current = lots.get(row.Symbol) ?? [];
       const cashPaid = Math.abs(numberFrom(row.Amount));
       const executionPrice = numberFrom(row.Price);
+      const effectiveCashPaid = cashPaid || quantity * executionPrice;
+      netCashCost.set(
+        row.Symbol,
+        (netCashCost.get(row.Symbol) ?? 0) + effectiveCashPaid,
+      );
       current.push({
         quantity,
         cashCostPerShare: quantity
-          ? cashPaid > 0
-            ? cashPaid / quantity
+          ? effectiveCashPaid > 0
+            ? effectiveCashPaid / quantity
             : executionPrice
           : 0,
         description: row.Description,
@@ -715,6 +803,11 @@ function portfolioLedger(rows: Transaction[]) {
           ? cashReceived / quantity
           : numberFrom(row.Price)
         : 0;
+      const effectiveCashReceived = quantity * proceedsPerShare;
+      netCashCost.set(
+        row.Symbol,
+        (netCashCost.get(row.Symbol) ?? 0) - effectiveCashReceived,
+      );
       const current = lots.get(row.Symbol) ?? [];
       while (remaining > 0.000001 && current.length) {
         const used = Math.min(remaining, current[0].quantity);
@@ -750,11 +843,14 @@ function portfolioLedger(rows: Transaction[]) {
         (sum, lot) => sum + lot.quantity * lot.cashCostPerShare,
         0,
       );
+      const netCost = netCashCost.get(symbol) ?? cost;
       return {
         symbol,
         quantity,
         cost,
         averageCost: quantity ? cost / quantity : 0,
+        netCost,
+        netAverageCost: quantity ? netCost / quantity : 0,
         description: entries[0]?.description ?? '',
       };
     })
@@ -772,6 +868,7 @@ function portfolioLedger(rows: Transaction[]) {
   return {
     positions,
     totalCost: positions.reduce((sum, item) => sum + item.cost, 0),
+    totalNetCost: positions.reduce((sum, item) => sum + item.netCost, 0),
     realizedPositions,
     totalRealizedPnl: realizedPositions.reduce(
       (sum, item) => sum + item.pnl,
@@ -831,6 +928,7 @@ export default function Home() {
   } | null>(null);
   const [dcaPlans, setDcaPlans] = useState<DcaPlan[]>(DEFAULT_DCA_PLANS);
   const [dcaSettingsOpen, setDcaSettingsOpen] = useState(false);
+  const dcaPlansBeforeEditRef = useRef<DcaPlan[] | null>(null);
   const [dcaPlanNotice, setDcaPlanNotice] = useState('');
   const [amountsMasked, setAmountsMasked] = useState(false);
   const [onlyAnomalies, setOnlyAnomalies] = useState(false);
@@ -893,7 +991,7 @@ export default function Home() {
       const saved = JSON.parse(
         localStorage.getItem(DCA_PLANS_KEY) || 'null',
       ) as DcaPlan[] | null;
-      if (Array.isArray(saved) && saved.length === DEFAULT_DCA_PLANS.length) {
+      if (Array.isArray(saved)) {
         setDcaPlans(normalizeDcaPlans(saved));
       }
     } catch {
@@ -1182,7 +1280,25 @@ export default function Home() {
     [data, todayKey],
   );
   const latestDcaMonth = offsetMonthKey(todayKey.slice(0, 7), 12);
-  const activeDcaPlans = useMemo(
+  const firstBuyMonthBySymbol = useMemo(() => {
+    const months = new Map<string, string>();
+    for (const row of data.BrokerageTransactions) {
+      if (row.Action !== 'Buy' || !row.Symbol) continue;
+      const month = dateKey(row.Date).slice(0, 7);
+      const remembered = months.get(row.Symbol);
+      if (!remembered || month < remembered) months.set(row.Symbol, month);
+    }
+    return months;
+  }, [data.BrokerageTransactions]);
+  const inferredDcaStartMonth = (plan: DcaPlan) => {
+    const firstBuyMonths = [plan.symbol, plan.secondarySymbol]
+      .filter((symbol): symbol is string => Boolean(symbol))
+      .map((symbol) => firstBuyMonthBySymbol.get(symbol))
+      .filter((month): month is string => Boolean(month))
+      .sort();
+    return firstBuyMonths[0] || todayKey.slice(0, 7);
+  };
+  const enabledDcaPlans = useMemo(
     () =>
       dcaPlans.filter(
         (plan) =>
@@ -1191,7 +1307,27 @@ export default function Home() {
       ),
     [dcaPlans],
   );
+  const activeDcaPlans = useMemo(
+    () =>
+      enabledDcaPlans.filter((plan) =>
+        dcaPlanAppliesToMonth(plan, dcaMonth, inferredDcaStartMonth(plan)),
+      ),
+    [dcaMonth, enabledDcaPlans, firstBuyMonthBySymbol, todayKey],
+  );
   const dcaPlanSymbols = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          enabledDcaPlans.flatMap((plan) =>
+            [plan.symbol, plan.secondarySymbol].filter(
+              (symbol): symbol is string => Boolean(symbol),
+            ),
+          ),
+        ),
+      ),
+    [enabledDcaPlans],
+  );
+  const activeDcaPlanSymbols = useMemo(
     () =>
       Array.from(
         new Set(
@@ -1345,7 +1481,11 @@ export default function Home() {
         const invested = dcaActivity
           .filter((row) => row.day.startsWith(key))
           .reduce((sum, row) => sum + row.invested, 0);
-        const target = dcaMonthlyTarget;
+        const target = enabledDcaPlans
+          .filter((plan) =>
+            dcaPlanAppliesToMonth(plan, key, inferredDcaStartMonth(plan)),
+          )
+          .reduce((sum, plan) => sum + plan.monthlyTarget, 0);
         return {
           key,
           label: `${index + 1}月`,
@@ -1356,7 +1496,7 @@ export default function Home() {
           trades: dcaActivity.filter((row) => row.day.startsWith(key)).length,
         };
       }),
-    [dcaActivity, dcaMonthlyTarget, dcaYear],
+    [dcaActivity, dcaYear, enabledDcaPlans, firstBuyMonthBySymbol, todayKey],
   );
   const dcaCalendar = useMemo(() => {
     const [year, month] = dcaMonth.split('-').map(Number);
@@ -1415,6 +1555,8 @@ export default function Home() {
             quantity: holding?.quantity ?? 0,
             averageCost: holding?.averageCost ?? 0,
             cost,
+            netCost: holding?.netCost ?? 0,
+            netAverageCost: holding?.netAverageCost ?? 0,
             quote,
             marketValue,
             pnl: quote ? marketValue - cost : 0,
@@ -1633,12 +1775,54 @@ export default function Home() {
     } catch {
       // Settings remain active for this session when storage is unavailable.
     }
+    dcaPlansBeforeEditRef.current = null;
     setDcaSettingsOpen(false);
+  }
+  function openDcaSettings() {
+    dcaPlansBeforeEditRef.current = dcaPlans.map((plan) => ({ ...plan }));
+    setDcaSettingsOpen(true);
+  }
+  function cancelDcaSettings() {
+    if (dcaPlansBeforeEditRef.current) {
+      setDcaPlans(dcaPlansBeforeEditRef.current);
+    }
+    dcaPlansBeforeEditRef.current = null;
+    setDcaSettingsOpen(false);
+  }
+  function addDcaPlan() {
+    setDcaPlans((current) => [
+      ...current,
+      {
+        id:
+          typeof crypto !== 'undefined' && 'randomUUID' in crypto
+            ? crypto.randomUUID()
+            : `plan-${Date.now()}`,
+        name: '新定投计划',
+        symbol: '',
+        enabled: true,
+        monthlyTarget: 0,
+        priority: 'primary',
+        startMonth: '',
+        durationMonths: null,
+      },
+    ]);
+  }
+  function moveDcaPlan(id: string, offset: -1 | 1) {
+    setDcaPlans((current) => {
+      const fromIndex = current.findIndex((plan) => plan.id === id);
+      const toIndex = fromIndex + offset;
+      if (fromIndex < 0 || toIndex < 0 || toIndex >= current.length)
+        return current;
+      const reordered = [...current];
+      const [moved] = reordered.splice(fromIndex, 1);
+      reordered.splice(toIndex, 0, moved);
+      return reordered;
+    });
   }
   function exportDcaPlans() {
     const payload: DcaPlanExport = {
       format: 'schwab-dashboard-dca-plan',
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
       plans: normalizeDcaPlans(dcaPlans),
     };
@@ -1982,7 +2166,9 @@ export default function Home() {
       document.title = previousTitle;
     };
     window.addEventListener('afterprint', restoreTitle, { once: true });
-    window.print();
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => window.print());
+    });
   }
   function updateSort(key: SortKey) {
     setSort((current) => ({
@@ -2372,7 +2558,7 @@ export default function Home() {
                 <Trash2 />
               </Button>
             </div>
-            <Button variant="outline" onClick={() => setDcaSettingsOpen(true)}>
+            <Button variant="outline" onClick={openDcaSettings}>
               <Settings2 /> 设置计划
             </Button>
             <DropdownMenu>
@@ -2452,8 +2638,8 @@ export default function Home() {
                 <span>当月计划</span>
                 <strong>{displayMoney(dcaMonthlyTarget, 0)}</strong>
                 <small>
-                  {dcaPlanSymbols.length
-                    ? `${dcaPlanSymbols.join('、')} 合计`
+                  {activeDcaPlanSymbols.length
+                    ? `${activeDcaPlanSymbols.join('、')} 合计`
                     : '尚未启用'}
                 </small>
               </div>
@@ -2690,6 +2876,16 @@ export default function Home() {
               const planSymbolsLabel = [plan.symbol, plan.secondarySymbol]
                 .filter(Boolean)
                 .join(' / ');
+              const resolvedStartMonth =
+                plan.startMonth || inferredDcaStartMonth(plan);
+              const scheduleLabel =
+                plan.durationMonths === null
+                  ? resolvedStartMonth
+                    ? `${resolvedStartMonth} 起 · 一直定投`
+                    : '一直定投'
+                  : resolvedStartMonth
+                    ? `第 ${monthDistance(resolvedStartMonth, dcaMonth) + 1}/${plan.durationMonths} 月`
+                    : `持续 ${plan.durationMonths} 月`;
               const shareEstimate = (symbol: string) => {
                 const price = quotes[symbol]?.current;
                 return price && price > 0
@@ -2717,23 +2913,15 @@ export default function Home() {
               return (
                 <article
                   className={`dca-plan-card ${plan.priority}`}
-                  key={`${plan.priority}-${planSymbolsLabel}`}
+                  key={plan.id}
                 >
                   <div className="dca-plan-top">
                     <div className="dca-symbol">
-                      <i>
-                        {plan.priority === 'secondary'
-                          ? '防御'
-                          : plan.symbol.slice(0, 2)}
-                      </i>
+                      <i>{plan.name.slice(0, 2)}</i>
                       <div>
-                        <strong>
-                          {plan.priority === 'secondary'
-                            ? planSymbolsLabel
-                            : plan.symbol}
-                        </strong>
+                        <strong>{plan.name}</strong>
                         <span>
-                          {plan.priority === 'primary' ? '主定投' : '次定投'}
+                          {planSymbolsLabel} · {scheduleLabel}
                         </span>
                       </div>
                     </div>
@@ -2756,7 +2944,7 @@ export default function Home() {
                         } as React.CSSProperties
                       }
                       role="img"
-                      aria-label={`${plan.priority === 'secondary' ? '防御类' : plan.symbol} 完成 ${plan.progress.toFixed(0)}%`}
+                      aria-label={`${plan.name} 完成 ${plan.progress.toFixed(0)}%`}
                     >
                       <div>
                         <strong>{plan.progress.toFixed(0)}%</strong>
@@ -2859,6 +3047,9 @@ export default function Home() {
                     <th>持仓数量</th>
                     <th>现金均价</th>
                     <th>真实现金成本</th>
+                    <th title="累计买入实际支出减去累计卖出实际回款">
+                      做 T 后净成本
+                    </th>
                     <th>现价 / 今日</th>
                     <th>市值 / 浮盈亏</th>
                     <th title="占定投篮子持仓市值的比例；所有相关持仓取得报价后显示，右侧圆环仍按成本计算">
@@ -2931,6 +3122,22 @@ export default function Home() {
                         </td>
                         <td className="numeric mono">
                           {row.cost ? displayMoney(row.cost, 2) : '—'}
+                        </td>
+                        <td className="numeric mono net-cost-cell">
+                          {row.quantity ? (
+                            <>
+                              <strong
+                                className={row.netCost <= 0 ? 'pos' : undefined}
+                              >
+                                {displayMoney(row.netCost, 2)}
+                              </strong>
+                              <small>
+                                每股 {displayMoney(row.netAverageCost, 2)}
+                              </small>
+                            </>
+                          ) : (
+                            '—'
+                          )}
                         </td>
                         <td className="numeric mono">
                           {row.quote ? (
@@ -3353,13 +3560,15 @@ export default function Home() {
         </section>
       </section>
 
-      <Dialog open={dcaSettingsOpen} onOpenChange={setDcaSettingsOpen}>
+      <Dialog
+        open={dcaSettingsOpen}
+        onOpenChange={(open) => !open && cancelDcaSettings()}
+      >
         <DialogContent className="dca-settings-dialog">
           <DialogHeader>
             <DialogTitle>设置每月定投计划</DialogTitle>
             <DialogDescription>
-              修改后，定投页的历史统计、持仓分析和流水会全部切换到新标的。第三组的两个防御标的共用一份额度。
-              停用计划不会删除已填写的代码和额度。
+              每项计划都可以自定义名称，并选择单标的或双标的。双标的共用月度额度和完成进度；有限计划结束后不再计入月度目标，但历史交易仍会保留。
             </DialogDescription>
           </DialogHeader>
           <div className="dca-settings-list">
@@ -3370,73 +3579,138 @@ export default function Home() {
                     ? 'dca-settings-secondary'
                     : 'dca-settings-primary'
                 } ${plan.enabled === false ? 'inactive-plan' : ''}`}
-                key={index}
+                key={plan.id}
               >
-                <span>
-                  <strong>
-                    {plan.priority === 'primary'
-                      ? `主定投 ${index + 1}`
-                      : '防御类'}
-                  </strong>
-                  <small>
-                    {plan.priority === 'primary' ? '主定投' : '防御类共享额度'}
-                  </small>
+                <div className="dca-settings-plan-head">
+                  <span>
+                    <strong>{plan.name || `定投计划 ${index + 1}`}</strong>
+                    <small>
+                      {plan.priority === 'secondary'
+                        ? `双标的共享额度 · ${[plan.symbol, plan.secondarySymbol].filter(Boolean).join(' / ') || '待填写'}`
+                        : `单标的 · ${plan.symbol || '待填写'}`}
+                    </small>
+                  </span>
                   <label className="dca-plan-enabled">
                     <Switch
                       checked={plan.enabled !== false}
                       onCheckedChange={(checked) =>
                         setDcaPlans((current) =>
-                          current.map((item, itemIndex) =>
-                            itemIndex === index
+                          current.map((item) =>
+                            item.id === plan.id
                               ? { ...item, enabled: checked }
                               : item,
                           ),
                         )
                       }
                     />
-                    <span>
-                      {plan.enabled === false
-                        ? '已停用'
-                        : [plan.symbol, plan.secondarySymbol].some(Boolean)
-                          ? '已启用'
-                          : '未填写标的'}
-                    </span>
+                    <span>{plan.enabled === false ? '已停用' : '已启用'}</span>
                   </label>
-                </span>
-                <Label>
-                  <span>
-                    {plan.priority === 'secondary' ? '防御标的 1' : '标的代码'}
-                  </span>
-                  <Input
-                    value={plan.symbol}
-                    maxLength={12}
-                    onChange={(event) =>
+                  <div
+                    className="dca-plan-order-actions"
+                    aria-label="调整计划顺序"
+                  >
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      aria-label={`上移 ${plan.name}`}
+                      title="上移"
+                      disabled={index === 0}
+                      onClick={() => moveDcaPlan(plan.id, -1)}
+                    >
+                      <ChevronUp />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      aria-label={`下移 ${plan.name}`}
+                      title="下移"
+                      disabled={index === dcaPlans.length - 1}
+                      onClick={() => moveDcaPlan(plan.id, 1)}
+                    >
+                      <ChevronDown />
+                    </Button>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    aria-label={`删除 ${plan.name || `定投计划 ${index + 1}`}`}
+                    title="删除这项计划"
+                    onClick={() =>
                       setDcaPlans((current) =>
-                        current.map((item, itemIndex) =>
-                          itemIndex === index
-                            ? {
-                                ...item,
-                                symbol: event.target.value.trim().toUpperCase(),
-                              }
-                            : item,
-                        ),
+                        current.filter((item) => item.id !== plan.id),
                       )
                     }
-                  />
-                </Label>
-                {plan.priority === 'secondary' ? (
-                  <Label>
-                    <span>防御标的 2</span>
+                  >
+                    <Trash2 />
+                  </Button>
+                </div>
+                <div
+                  className={`dca-settings-fields ${plan.durationMonths === null ? '' : 'has-fixed-duration'}`}
+                >
+                  <Label className="dca-field-name">
+                    <span>计划名称</span>
                     <Input
-                      value={plan.secondarySymbol ?? ''}
+                      value={plan.name}
+                      maxLength={30}
+                      onChange={(event) =>
+                        setDcaPlans((current) =>
+                          current.map((item) =>
+                            item.id === plan.id
+                              ? { ...item, name: event.target.value }
+                              : item,
+                          ),
+                        )
+                      }
+                    />
+                  </Label>
+                  <Label className="dca-field-type">
+                    <span>标的类型</span>
+                    <NativeSelect
+                      value={plan.priority}
+                      onChange={(event) =>
+                        setDcaPlans((current) =>
+                          current.map((item) =>
+                            item.id === plan.id
+                              ? event.target.value === 'secondary'
+                                ? {
+                                    ...item,
+                                    priority: 'secondary',
+                                    secondarySymbol: item.secondarySymbol ?? '',
+                                  }
+                                : {
+                                    ...item,
+                                    priority: 'primary',
+                                    secondarySymbol: undefined,
+                                  }
+                              : item,
+                          ),
+                        )
+                      }
+                    >
+                      <NativeSelectOption value="primary">
+                        单标的
+                      </NativeSelectOption>
+                      <NativeSelectOption value="secondary">
+                        双标的（共享额度）
+                      </NativeSelectOption>
+                    </NativeSelect>
+                  </Label>
+                  <Label className="dca-field-symbol dca-field-symbol-primary">
+                    <span>
+                      {plan.priority === 'secondary'
+                        ? '标的代码 1'
+                        : '标的代码'}
+                    </span>
+                    <Input
+                      value={plan.symbol}
                       maxLength={12}
                       onChange={(event) =>
                         setDcaPlans((current) =>
-                          current.map((item, itemIndex) =>
-                            itemIndex === index
+                          current.map((item) =>
+                            item.id === plan.id
                               ? {
                                   ...item,
-                                  secondarySymbol: event.target.value
+                                  symbol: event.target.value
                                     .trim()
                                     .toUpperCase(),
                                 }
@@ -3446,33 +3720,137 @@ export default function Home() {
                       }
                     />
                   </Label>
-                ) : null}
-                <Label>
-                  <span>每月额度</span>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="50"
-                    value={plan.monthlyTarget}
-                    onChange={(event) =>
-                      setDcaPlans((current) =>
-                        current.map((item, itemIndex) =>
-                          itemIndex === index
-                            ? {
-                                ...item,
-                                monthlyTarget: Number(event.target.value),
-                              }
-                            : item,
-                        ),
-                      )
-                    }
-                  />
-                </Label>
+                  {plan.priority === 'secondary' ? (
+                    <Label className="dca-field-symbol dca-field-symbol-secondary">
+                      <span>标的代码 2</span>
+                      <Input
+                        value={plan.secondarySymbol ?? ''}
+                        maxLength={12}
+                        onChange={(event) =>
+                          setDcaPlans((current) =>
+                            current.map((item) =>
+                              item.id === plan.id
+                                ? {
+                                    ...item,
+                                    secondarySymbol: event.target.value
+                                      .trim()
+                                      .toUpperCase(),
+                                  }
+                                : item,
+                            ),
+                          )
+                        }
+                      />
+                    </Label>
+                  ) : null}
+                  <Label className="dca-field-amount">
+                    <span>每月额度</span>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="50"
+                      value={plan.monthlyTarget}
+                      onChange={(event) =>
+                        setDcaPlans((current) =>
+                          current.map((item) =>
+                            item.id === plan.id
+                              ? {
+                                  ...item,
+                                  monthlyTarget: Number(event.target.value),
+                                }
+                              : item,
+                          ),
+                        )
+                      }
+                    />
+                  </Label>
+                  <Label className="dca-field-start">
+                    <span>开始月份（默认首次买入）</span>
+                    <Input
+                      type="month"
+                      value={plan.startMonth || inferredDcaStartMonth(plan)}
+                      onChange={(event) =>
+                        setDcaPlans((current) =>
+                          current.map((item) =>
+                            item.id === plan.id
+                              ? { ...item, startMonth: event.target.value }
+                              : item,
+                          ),
+                        )
+                      }
+                    />
+                  </Label>
+                  <Label className="dca-field-duration">
+                    <span>定投期限</span>
+                    <NativeSelect
+                      value={plan.durationMonths === null ? 'ongoing' : 'fixed'}
+                      onChange={(event) =>
+                        setDcaPlans((current) =>
+                          current.map((item) =>
+                            item.id === plan.id
+                              ? {
+                                  ...item,
+                                  durationMonths:
+                                    event.target.value === 'ongoing'
+                                      ? null
+                                      : item.durationMonths || 12,
+                                }
+                              : item,
+                          ),
+                        )
+                      }
+                    >
+                      <NativeSelectOption value="ongoing">
+                        一直定投
+                      </NativeSelectOption>
+                      <NativeSelectOption value="fixed">
+                        按月数结束
+                      </NativeSelectOption>
+                    </NativeSelect>
+                  </Label>
+                  {plan.durationMonths !== null ? (
+                    <Label className="dca-field-months">
+                      <span>持续月数</span>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="1200"
+                        step="1"
+                        value={plan.durationMonths}
+                        onChange={(event) =>
+                          setDcaPlans((current) =>
+                            current.map((item) =>
+                              item.id === plan.id
+                                ? {
+                                    ...item,
+                                    durationMonths: Math.max(
+                                      1,
+                                      Number(event.target.value) || 1,
+                                    ),
+                                  }
+                                : item,
+                            ),
+                          )
+                        }
+                      />
+                    </Label>
+                  ) : null}
+                </div>
               </div>
             ))}
+            {!dcaPlans.length ? (
+              <div className="empty-state">尚未添加定投标的</div>
+            ) : null}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDcaSettingsOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={addDcaPlan}
+              disabled={dcaPlans.length >= 50}
+            >
+              <Plus /> 添加标的
+            </Button>
+            <Button variant="outline" onClick={cancelDcaSettings}>
               取消
             </Button>
             <Button onClick={saveDcaPlans}>保存计划</Button>
@@ -3625,6 +4003,7 @@ export default function Home() {
                     <col className="holding-col-quantity" />
                     <col className="holding-col-average" />
                     <col className="holding-col-cost" />
+                    <col className="holding-col-net-cost" />
                     <col className="holding-col-price" />
                     <col className="holding-col-market" />
                     <col className="holding-col-share" />
@@ -3635,6 +4014,12 @@ export default function Home() {
                       <th className="numeric">持仓数量</th>
                       <th className="numeric">现金均价</th>
                       <th className="numeric">真实现金成本</th>
+                      <th
+                        className="numeric"
+                        title="累计买入实际支出减去累计卖出实际回款；每股净成本为该金额除以当前持仓数量"
+                      >
+                        做 T 后净成本
+                      </th>
                       <th className="numeric">现价 / 今日</th>
                       <th className="numeric">市值 / 浮盈亏</th>
                       <th title="占全部持仓市值的比例（不含现金）；所有持仓取得报价后显示，饼图仍按成本计算">
@@ -3704,6 +4089,16 @@ export default function Home() {
                           </td>
                           <td className="numeric mono cost-cell">
                             {displayMoney(item.cost, 2)}
+                          </td>
+                          <td className="numeric mono net-cost-cell">
+                            <strong
+                              className={item.netCost <= 0 ? 'pos' : undefined}
+                            >
+                              {displayMoney(item.netCost, 2)}
+                            </strong>
+                            <small>
+                              每股 {displayMoney(item.netAverageCost, 2)}
+                            </small>
                           </td>
                           <td className="numeric mono">
                             {quote ? (
@@ -3940,7 +4335,8 @@ export default function Home() {
             计入大型科技，SOXL、SMH 与 TSM 计入半导体产业链，RAM 与 SKUU
             计入存储与内存。真实现金成本优先按每笔买入的实际交易金额分摊至每股，再按
             FIFO 扣除已卖出批次；它不包含 wash sale
-            对税务成本的调增。交易金额缺失时，才使用成交价乘数量。
+            对税务成本的调增。交易金额缺失时，才使用成交价乘数量。 做 T
+            后净成本等于该标的全部买入实际支出减去全部卖出实际回款，再除以当前持仓数量得到每股净成本；它可能为负数，且不计入分红。
             {holdings.incomplete
               ? ' 已检测到卖出数量超过已记录买入数量，请检查原始文件。'
               : ''}
