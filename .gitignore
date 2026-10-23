@@ -37,7 +37,9 @@ next-env.d.ts
 /.wrangler/
 /outputs/
 /work/
+*.tsbuildinfo
 
 # local brokerage exports (never publish)
 /app/transactions.json
 /public/data/transactions.json
+/Individual_*_Transactions_*.json

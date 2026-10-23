@@ -710,6 +710,106 @@ input {
   border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
   background: color-mix(in srgb, var(--primary) 6%, var(--background));
 }
+.income-breakdown-grid article.dividend-summary {
+  grid-column: span 2;
+  padding: 17px 18px;
+}
+.dividend-summary-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+.income-breakdown-grid .dividend-summary-main small {
+  margin-top: 4px;
+  font: 500 10px var(--font-geist-mono);
+  letter-spacing: 0.035em;
+}
+.income-breakdown-grid .dividend-summary-main strong {
+  margin: 0;
+  font-size: 25px;
+  text-align: right;
+}
+.dividend-tax-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 14px;
+  border-block: 1px solid var(--border);
+}
+.income-breakdown-grid .dividend-tax-strip > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px 9px 0;
+  font-size: 11px;
+  font-weight: 550;
+}
+.income-breakdown-grid .dividend-tax-strip > span + span {
+  padding-inline: 12px 0;
+  border-left: 1px solid var(--border);
+}
+.income-breakdown-grid .dividend-tax-strip small {
+  margin: 0;
+  font-size: 10px;
+}
+.dividend-tax-strip b {
+  color: var(--foreground);
+  font: 650 12px var(--font-geist-mono);
+  white-space: nowrap;
+}
+.dividend-type-breakdown {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  margin-top: 13px;
+}
+.dividend-type-breakdown > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 2px 14px;
+}
+.dividend-type-breakdown > div:first-child {
+  padding-left: 0;
+}
+.dividend-type-breakdown > div + div {
+  border-left: 1px solid var(--border);
+}
+.dividend-type-breakdown > div:last-child {
+  padding-right: 0;
+}
+.income-breakdown-grid .dividend-type-breakdown span,
+.income-breakdown-grid .dividend-type-breakdown small {
+  display: block;
+}
+.income-breakdown-grid .dividend-type-breakdown span {
+  min-width: 0;
+  color: var(--foreground);
+  font-size: 11px;
+}
+.income-breakdown-grid .dividend-type-breakdown small {
+  margin: 2px 0 0;
+  color: var(--muted-foreground);
+  font: 500 9px var(--font-geist-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.income-breakdown-grid .dividend-type-breakdown strong {
+  margin: 0;
+  color: var(--foreground);
+  font: 650 12px var(--font-geist-mono);
+  white-space: nowrap;
+}
+.dividend-empty {
+  grid-column: 1 / -1;
+  padding: 4px 0;
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
 .income-breakdown-grid span,
 .income-breakdown-grid small {
   display: block;
@@ -931,7 +1031,7 @@ input {
 }
 .holdings-table {
   width: 100%;
-  min-width: 940px;
+  min-width: 860px;
   table-layout: fixed;
   border-collapse: collapse;
 }
@@ -939,25 +1039,22 @@ input {
   width: 17%;
 }
 .holding-col-quantity {
-  width: 8%;
-}
-.holding-col-cost {
-  width: 11%;
-}
-.holding-col-average {
   width: 9%;
 }
+.holding-col-cost {
+  width: 15%;
+}
 .holding-col-net-cost {
-  width: 13%;
+  width: 15%;
 }
 .holding-col-price {
-  width: 15%;
+  width: 14%;
 }
 .holding-col-market {
   width: 16%;
 }
 .holding-col-share {
-  width: 11%;
+  width: 14%;
 }
 .holdings-table th {
   height: 38px;
@@ -993,11 +1090,11 @@ input {
 .holdings-table td:first-child strong {
   font: 720 15px var(--font-geist-mono);
 }
-.net-cost-cell strong,
-.net-cost-cell small {
+.cost-breakdown-cell strong,
+.cost-breakdown-cell small {
   display: block;
 }
-.net-cost-cell small {
+.cost-breakdown-cell small {
   margin-top: 2px;
   color: var(--muted-foreground);
   font-size: 10px;
@@ -1256,6 +1353,196 @@ input {
   color: var(--muted-foreground);
   font: 600 11px var(--font-geist-mono);
 }
+.nasdaq-exposure-card {
+  margin-top: 11px;
+  padding-top: 11px;
+  border-top: 1px solid var(--border);
+}
+.nasdaq-exposure-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+.nasdaq-exposure-head > span,
+.nasdaq-exposure-head small,
+.nasdaq-exposure-head strong {
+  display: block;
+}
+.nasdaq-exposure-head small {
+  color: var(--primary);
+  font: 650 8px var(--font-geist-mono);
+  letter-spacing: 0.08em;
+}
+.nasdaq-exposure-head strong {
+  margin-top: 2px;
+  font-size: 12px;
+}
+.nasdaq-exposure-head > b {
+  color: var(--primary);
+  font: 720 18px var(--font-geist-mono);
+}
+.nasdaq-exposure-scale {
+  margin-top: 9px;
+}
+.nasdaq-exposure-track {
+  position: relative;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--secondary);
+}
+.nasdaq-exposure-track i {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #6756d8, #2e78c7);
+}
+.nasdaq-exposure-track i.negative {
+  background: linear-gradient(90deg, #d94a59, #d26483);
+}
+.nasdaq-reference-line {
+  position: absolute;
+  top: -3px;
+  width: 1px;
+  height: 11px;
+  background: var(--foreground);
+  opacity: 0.55;
+}
+.nasdaq-exposure-ticks {
+  position: relative;
+  height: 14px;
+  margin-top: 3px;
+}
+.nasdaq-exposure-ticks span {
+  position: absolute;
+  color: var(--muted-foreground);
+  font: 500 8px var(--font-geist-mono);
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.nasdaq-exposure-ticks span:first-child {
+  transform: none;
+}
+.nasdaq-exposure-ticks span:last-child {
+  transform: translateX(-100%);
+}
+.nasdaq-exposure-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+.nasdaq-exposure-metrics > span {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--muted) 52%, transparent);
+}
+.nasdaq-exposure-metrics small {
+  color: var(--muted-foreground);
+  font-size: 9px;
+}
+.nasdaq-exposure-metrics strong {
+  font: 650 10px var(--font-geist-mono);
+  white-space: nowrap;
+}
+.nasdaq-leverage-note {
+  margin: 5px 1px 0;
+  color: var(--muted-foreground);
+  font-size: 9px;
+  line-height: 1.4;
+}
+.pnl-reconciliation-note {
+  margin-left: 0.45em;
+  color: color-mix(in srgb, var(--muted-foreground) 78%, transparent);
+  font: 500 10px var(--font-geist-mono);
+  white-space: nowrap;
+}
+.pnl-reconciliation-note::before {
+  content: '·';
+  margin-right: 0.45em;
+}
+.nasdaq-product-allocation {
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+}
+.nasdaq-product-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.nasdaq-product-head span {
+  font-size: 10px;
+  font-weight: 650;
+}
+.nasdaq-product-head small {
+  color: var(--muted-foreground);
+  font-size: 8px;
+}
+.nasdaq-product-bar {
+  height: 7px;
+  display: flex;
+  margin-top: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--secondary);
+}
+.nasdaq-product-bar i {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+}
+.nasdaq-product-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px 10px;
+  margin-top: 8px;
+}
+.nasdaq-product-list > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 7px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+.nasdaq-product-list > div > i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.nasdaq-product-list span,
+.nasdaq-product-list b,
+.nasdaq-product-list small {
+  display: block;
+  min-width: 0;
+}
+.nasdaq-product-list b {
+  color: var(--foreground);
+  font: 650 9px var(--font-geist-mono);
+}
+.nasdaq-product-list small {
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nasdaq-product-list strong {
+  font: 650 9px var(--font-geist-mono);
+  white-space: nowrap;
+}
+.nasdaq-product-empty {
+  margin-top: 9px;
+  color: var(--muted-foreground);
+  font-size: 9px;
+}
 .holdings-charts .recharts-sector:focus,
 .holdings-charts .recharts-sector:focus-visible,
 .holdings-charts .recharts-rectangle:focus,
@@ -1290,13 +1577,17 @@ input {
 }
 .realized-layout {
   display: grid;
-  grid-template-columns: minmax(300px, 0.72fr) minmax(620px, 1.28fr);
+  grid-template-columns: minmax(340px, 0.78fr) minmax(620px, 1.22fr);
   gap: 12px;
   margin-top: 17px;
+  align-items: stretch;
 }
 .realized-chart {
-  height: 310px;
+  height: auto;
+  min-height: 100%;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -1311,6 +1602,7 @@ input {
   border-bottom: 1px solid var(--border);
 }
 .realized-chart-head > div {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1322,17 +1614,20 @@ input {
 }
 .realized-chart-head strong {
   font-size: 14px;
+  line-height: 1.3;
 }
 .realized-chart-head small {
   color: var(--muted-foreground);
   font-size: 10px;
 }
 .realized-performance-list {
+  flex: 1;
   display: flex;
   flex-direction: column;
+  justify-content: space-evenly;
 }
 .realized-performance-row {
-  padding: 10px 0 9px;
+  padding: 8px 0 7px;
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: center;
@@ -1832,7 +2127,8 @@ input {
     grid-template-columns: 1fr;
   }
   .realized-chart {
-    height: 260px;
+    height: auto;
+    min-height: 0;
   }
 }
 @media (max-width: 650px) {
@@ -1940,6 +2236,27 @@ input {
   }
   .income-breakdown-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .dividend-tax-strip,
+  .dividend-type-breakdown {
+    grid-template-columns: 1fr;
+  }
+  .income-breakdown-grid .dividend-tax-strip > span,
+  .income-breakdown-grid .dividend-tax-strip > span + span {
+    padding: 8px 0;
+    border-left: 0;
+  }
+  .income-breakdown-grid .dividend-tax-strip > span + span {
+    border-top: 1px solid var(--border);
+  }
+  .dividend-type-breakdown > div,
+  .dividend-type-breakdown > div:first-child,
+  .dividend-type-breakdown > div:last-child {
+    padding: 7px 0;
+  }
+  .dividend-type-breakdown > div + div {
+    border-top: 1px solid var(--border);
+    border-left: 0;
   }
   .symbol-cards {
     grid-template-columns: 1fr;
@@ -2357,7 +2674,7 @@ input {
 }
 .dca-analysis-table {
   width: 100%;
-  min-width: 940px;
+  min-width: 860px;
   table-layout: fixed;
   border-collapse: collapse;
   font-size: 12px;
@@ -2368,31 +2685,27 @@ input {
 }
 .dca-analysis-table th:nth-child(2),
 .dca-analysis-table td:nth-child(2) {
-  width: 8%;
+  width: 9%;
 }
 .dca-analysis-table th:nth-child(3),
 .dca-analysis-table td:nth-child(3) {
-  width: 9%;
+  width: 15%;
 }
 .dca-analysis-table th:nth-child(4),
 .dca-analysis-table td:nth-child(4) {
-  width: 11%;
+  width: 15%;
 }
 .dca-analysis-table th:nth-child(5),
 .dca-analysis-table td:nth-child(5) {
-  width: 13%;
+  width: 14%;
 }
 .dca-analysis-table th:nth-child(6),
 .dca-analysis-table td:nth-child(6) {
-  width: 15%;
+  width: 16%;
 }
 .dca-analysis-table th:nth-child(7),
 .dca-analysis-table td:nth-child(7) {
-  width: 16%;
-}
-.dca-analysis-table th:nth-child(8),
-.dca-analysis-table td:nth-child(8) {
-  width: 11%;
+  width: 14%;
 }
 .dca-analysis-table th,
 .dca-analysis-table td {
@@ -3677,21 +3990,18 @@ button.dca-calendar-day:focus-visible {
     content: '持仓数量';
   }
   .dca-analysis-table td:nth-child(3)::before {
-    content: '现金均价';
-  }
-  .dca-analysis-table td:nth-child(4)::before {
     content: '真实现金成本';
   }
-  .dca-analysis-table td:nth-child(5)::before {
+  .dca-analysis-table td:nth-child(4)::before {
     content: '做 T 后净成本';
   }
-  .dca-analysis-table td:nth-child(6)::before {
+  .dca-analysis-table td:nth-child(5)::before {
     content: '现价 / 今日';
   }
-  .dca-analysis-table td:nth-child(7)::before {
+  .dca-analysis-table td:nth-child(6)::before {
     content: '市值 / 浮盈亏';
   }
-  .dca-analysis-table td:nth-child(8)::before {
+  .dca-analysis-table td:nth-child(7)::before {
     content: '市值占比';
   }
   .dca-transactions-table tbody td:nth-child(1)::before,

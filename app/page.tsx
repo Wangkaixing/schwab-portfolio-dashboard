@@ -28,6 +28,7 @@ import {
   Bar,
   BarChart,
   Cell,
+  LabelList,
   Line,
   LineChart,
   Pie,
@@ -235,6 +236,7 @@ const ACTION_LABELS: Record<string, string> = {
   Other: '其他',
 };
 const PAGE_SIZE = 8;
+const REALIZED_PAGE_SIZE = 6;
 const LAST_IMPORT_KEY = 'schwab-dashboard:last-json-import';
 const LEGACY_QUOTES_KEY = 'schwab-dashboard:last-market-quotes:v2';
 const EXTENDED_QUOTES_KEY = 'schwab-dashboard:market-quotes:extended:v1';
@@ -245,6 +247,26 @@ const EXTENDED_HOURS_KEY = 'schwab-dashboard:include-extended-hours';
 const PAIR_SYMBOLS = ['CGDV', 'VTV', 'SCHD', 'KO'] as const;
 const PAIR_LENGTH = 35;
 const PAIR_ARM_THRESHOLD = 1;
+const NASDAQ_100_EXPOSURE_MULTIPLIER: Record<string, number> = {
+  QQQ: 1,
+  QQQM: 1,
+  GPIQ: 1,
+  JEPQ: 1,
+  QQQI: 1,
+  QLD: 2,
+  TQQQ: 3,
+  PSQ: -1,
+  QID: -2,
+  SQQQ: -3,
+};
+const NASDAQ_EXPOSURE_COLORS = [
+  '#6756d8',
+  '#2e78c7',
+  '#15966b',
+  '#c68a35',
+  '#d26483',
+  '#7a8da5',
+];
 const DCA_PLANS_KEY = 'schwab-dashboard:dca-plans:v4';
 const THEME_KEY = 'schwab-dashboard:theme';
 
@@ -377,6 +399,11 @@ function numberFrom(value = '') {
     value.includes('-') || (value.startsWith('(') && value.endsWith(')'));
   const parsed = Number(value.replace(/[$,()\-]/g, '')) || 0;
   return negative ? -parsed : parsed;
+}
+function isIncomeWithholdingTax(row: Transaction) {
+  return /foreign tax paid|nra tax adj|withhold(?:ing)? tax|tax withheld|non[- ]?resident.*tax/i.test(
+    row.Action,
+  );
 }
 function calculatePairIndicator(
   symbol: string,
@@ -935,11 +962,15 @@ export default function Home() {
   const [excludedIndustries, setExcludedIndustries] = useState<
     Set<IndustryTheme>
   >(new Set());
+  const [excludedSymbols, setExcludedSymbols] = useState<Set<string>>(
+    new Set(),
+  );
   const [excludedDcaSymbols, setExcludedDcaSymbols] = useState<Set<string>>(
     new Set(),
   );
   const [page, setPage] = useState(1);
   const [dcaTransactionPage, setDcaTransactionPage] = useState(1);
+  const [realizedPage, setRealizedPage] = useState(1);
   const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection }>({
     key: 'Date',
     direction: 'desc',
@@ -1195,6 +1226,66 @@ export default function Home() {
     () => displayedIndustryData.reduce((sum, item) => sum + item.value, 0),
     [displayedIndustryData],
   );
+  const nasdaqExposure = useMemo(() => {
+    const basePositions = typedHoldings
+      .filter((item) => NASDAQ_100_EXPOSURE_MULTIPLIER[item.symbol])
+      .map((item) => ({
+        symbol: item.symbol,
+        cost: item.cost,
+        multiplier: NASDAQ_100_EXPOSURE_MULTIPLIER[item.symbol],
+      }))
+      .sort((a, b) => b.cost - a.cost);
+    const capital = basePositions.reduce((sum, item) => sum + item.cost, 0);
+    const effective = basePositions.reduce(
+      (sum, item) => sum + item.cost * item.multiplier,
+      0,
+    );
+    const grossEffective = basePositions.reduce(
+      (sum, item) => sum + item.cost * Math.abs(item.multiplier),
+      0,
+    );
+    const positions = basePositions.map((item, index) => ({
+      ...item,
+      color: NASDAQ_EXPOSURE_COLORS[index % NASDAQ_EXPOSURE_COLORS.length],
+      sharePercent: capital ? (item.cost / capital) * 100 : 0,
+      portfolioPercent: holdings.totalCost
+        ? (item.cost / holdings.totalCost) * 100
+        : 0,
+    }));
+    const effectivePercent = holdings.totalCost
+      ? (effective / holdings.totalCost) * 100
+      : 0;
+    const scaleMin = Math.min(
+      0,
+      Math.floor(Math.min(0, effectivePercent) / 50) * 50,
+    );
+    const scaleMax = Math.max(
+      100,
+      Math.ceil(Math.max(0, effectivePercent) / 50) * 50,
+    );
+    const scaleRange = scaleMax - scaleMin || 100;
+    const scalePosition = (value: number) =>
+      ((value - scaleMin) / scaleRange) * 100;
+    const zeroPosition = scalePosition(0);
+    const effectivePosition = scalePosition(effectivePercent);
+    return {
+      positions,
+      capital,
+      effective,
+      capitalPercent: holdings.totalCost
+        ? (capital / holdings.totalCost) * 100
+        : 0,
+      netAverageLeverage: capital ? effective / capital : 0,
+      grossAverageLeverage: capital ? grossEffective / capital : 0,
+      effectivePercent,
+      referencePosition: scalePosition(100),
+      exposureBarLeft: Math.min(zeroPosition, effectivePosition),
+      exposureBarWidth: Math.abs(effectivePosition - zeroPosition),
+      scaleTicks: [...new Set([scaleMin, 0, 100, scaleMax])]
+        .sort((a, b) => a - b)
+        .map((value) => ({ value, position: scalePosition(value) })),
+    };
+  }, [typedHoldings, holdings.totalCost]);
   const holdingCostData = useMemo(
     () =>
       typedHoldings.map((item) => ({
@@ -1203,6 +1294,20 @@ export default function Home() {
         color: THEME_COLORS[item.industryTheme],
       })),
     [typedHoldings],
+  );
+  const displayedHoldingCostData = useMemo(() => {
+    const filtered = holdingCostData.filter(
+      (item) => !excludedSymbols.has(item.symbol),
+    );
+    const totalCost = filtered.reduce((s, h) => s + h.cost, 0);
+    return filtered.map((item) => ({
+      ...item,
+      pct: totalCost > 0 ? (item.cost / totalCost) * 100 : 0,
+    }));
+  }, [holdingCostData, excludedSymbols]);
+  const displayedHoldingCost = useMemo(
+    () => displayedHoldingCostData.reduce((s, h) => s + h.cost, 0),
+    [displayedHoldingCostData],
   );
   const marketSummary = useMemo(
     () =>
@@ -1235,6 +1340,15 @@ export default function Home() {
     ...holdings.realizedPositions.map((item) => Math.abs(item.pnl)),
     1,
   );
+  const realizedTotalPages = Math.max(
+    1,
+    Math.ceil(holdings.realizedPositions.length / REALIZED_PAGE_SIZE),
+  );
+  const currentRealizedPage = Math.min(realizedPage, realizedTotalPages);
+  const visibleRealizedPositions = holdings.realizedPositions.slice(
+    (currentRealizedPage - 1) * REALIZED_PAGE_SIZE,
+    currentRealizedPage * REALIZED_PAGE_SIZE,
+  );
   const ledgerCash = allStats.net;
   const totalAssets =
     ledgerCash +
@@ -1257,20 +1371,78 @@ export default function Home() {
       data.BrokerageTransactions.reduce(
         (summary, row) => {
           if (/dividend/i.test(row.Action)) {
-            summary.dividends += numberFrom(row.Amount);
-          } else if (/interest/i.test(row.Action)) {
-            summary.interest += numberFrom(row.Amount);
+            const amount = numberFrom(row.Amount);
+            summary.dividends += amount;
+            if (/qualified dividend/i.test(row.Action)) {
+              summary.qualifiedDividends += amount;
+            } else if (/reinvest dividend/i.test(row.Action)) {
+              summary.reinvestDividends += amount;
+            } else if (/cash dividend/i.test(row.Action)) {
+              summary.cashDividends += amount;
+            } else {
+              summary.otherDividends += amount;
+            }
+          }
+          if (isIncomeWithholdingTax(row)) {
+            summary.withholdingTax += numberFrom(row.Amount);
           }
           return summary;
         },
-        { dividends: 0, interest: 0 },
+        {
+          dividends: 0,
+          cashDividends: 0,
+          qualifiedDividends: 0,
+          reinvestDividends: 0,
+          otherDividends: 0,
+          withholdingTax: 0,
+        },
       ),
     [data],
   );
+  const netDividends = cashReturns.dividends + cashReturns.withholdingTax;
+  const dividendBreakdown = [
+    {
+      label: '现金分红',
+      english: 'Cash Dividend',
+      value: cashReturns.cashDividends,
+    },
+    {
+      label: '合格股息',
+      english: 'Qualified Dividend',
+      value: cashReturns.qualifiedDividends,
+    },
+    {
+      label: '再投资分红',
+      english: 'Reinvest Dividend',
+      value: cashReturns.reinvestDividends,
+    },
+    {
+      label: '其他分红',
+      english: 'Other Dividend',
+      value: cashReturns.otherDividends,
+    },
+  ].filter((item) => item.value !== 0);
   const totalPnl = totalAssets - externalNetContributions;
   const totalPnlPercent = externalNetContributions
     ? (totalPnl / Math.abs(externalNetContributions)) * 100
     : 0;
+  const nonTradingCashFlow = useMemo(
+    () =>
+      data.BrokerageTransactions.reduce((sum, row) => {
+        if (row.Action === 'Buy' || row.Action === 'Sell') return sum;
+        if (/wire|moneylink/i.test(row.Action)) return sum;
+        return sum + numberFrom(row.Amount);
+      }, 0),
+    [data],
+  );
+  const pnlReconciliationDifference =
+    totalPnl -
+    marketSummary.unrealizedPnl -
+    holdings.totalRealizedPnl -
+    nonTradingCashFlow;
+  const pnlReconciliationReady =
+    holdings.positions.length > 0 &&
+    marketSummary.quotedCount === holdings.positions.length;
   const dcaMonth = selectedDcaMonth;
   const earliestDcaMonth = useMemo(
     () =>
@@ -1637,7 +1809,12 @@ export default function Home() {
     setLastUpdated(updatedAt);
     setOnlyAnomalies(false);
     setExcludedIndustries(new Set());
+    setExcludedSymbols(new Set());
     setPage(1);
+    setDcaTransactionPage(1);
+    setRealizedPage(1);
+    setSelected(null);
+    setCalendarDayDetails(null);
     setError('');
   }
   function saveTransactionUndoPoint() {
@@ -1711,12 +1888,11 @@ export default function Home() {
         dateStyle: 'medium',
         timeStyle: 'short',
       }).format(new Date());
-      const merged = mergeSchwabExports(maintainedDataRef.current, next);
       clearTransactionUndoPoint();
-      maintainedDataRef.current = merged;
-      setMaintainedCount(merged.BrokerageTransactions.length);
-      showData(merged, `维护数据 · ${file.name}`, importedAt);
-      rememberImport(merged, `维护数据 · ${file.name}`, importedAt);
+      maintainedDataRef.current = next;
+      setMaintainedCount(next.BrokerageTransactions.length);
+      showData(next, `当前数据 · ${file.name}`, importedAt);
+      rememberImport(next, `当前数据 · ${file.name}`, importedAt);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '文件无法读取');
     }
@@ -1744,7 +1920,12 @@ export default function Home() {
     setLastUpdated(clearedAt);
     setOnlyAnomalies(false);
     setExcludedIndustries(new Set());
+    setExcludedSymbols(new Set());
     setPage(1);
+    setDcaTransactionPage(1);
+    setRealizedPage(1);
+    setSelected(null);
+    setCalendarDayDetails(null);
     setError('');
     try {
       localStorage.removeItem(LAST_IMPORT_KEY);
@@ -1754,6 +1935,7 @@ export default function Home() {
     } catch {
       // Ignore unavailable browser storage.
     }
+    setClearDialogOpen(false);
   }
   function openManualTransactionDialog() {
     const today = new Intl.DateTimeFormat('sv-SE', {
@@ -3045,7 +3227,6 @@ export default function Home() {
                   <tr>
                     <th>标的</th>
                     <th>持仓数量</th>
-                    <th>现金均价</th>
                     <th>真实现金成本</th>
                     <th title="累计买入实际支出减去累计卖出实际回款">
                       做 T 后净成本
@@ -3117,13 +3298,19 @@ export default function Home() {
                                 })
                               : '—'}
                         </td>
-                        <td className="numeric mono">
-                          {row.cost ? displayMoney(row.averageCost, 2) : '—'}
+                        <td className="numeric mono cost-cell cost-breakdown-cell">
+                          {row.quantity ? (
+                            <>
+                              <strong>{displayMoney(row.cost, 2)}</strong>
+                              <small>
+                                每股 {displayMoney(row.averageCost, 2)}
+                              </small>
+                            </>
+                          ) : (
+                            '—'
+                          )}
                         </td>
-                        <td className="numeric mono">
-                          {row.cost ? displayMoney(row.cost, 2) : '—'}
-                        </td>
-                        <td className="numeric mono net-cost-cell">
+                        <td className="numeric mono cost-breakdown-cell">
                           {row.quantity ? (
                             <>
                               <strong
@@ -3878,7 +4065,7 @@ export default function Home() {
               累计手续费 {displayMoney(allStats.fees, 2)}
             </span>
           </div>
-          <span>拖入或上传仅临时查看；“更新 JSON”才会合并并保存</span>
+          <span>拖入或上传仅临时查看；“更新 JSON”会替换并保存当前记录</span>
         </div>
         {error && (
           <div className="error-banner" role="alert">
@@ -4001,7 +4188,6 @@ export default function Home() {
                   <colgroup>
                     <col className="holding-col-asset" />
                     <col className="holding-col-quantity" />
-                    <col className="holding-col-average" />
                     <col className="holding-col-cost" />
                     <col className="holding-col-net-cost" />
                     <col className="holding-col-price" />
@@ -4012,7 +4198,6 @@ export default function Home() {
                     <tr>
                       <th>标的</th>
                       <th className="numeric">持仓数量</th>
-                      <th className="numeric">现金均价</th>
                       <th className="numeric">真实现金成本</th>
                       <th
                         className="numeric"
@@ -4084,13 +4269,13 @@ export default function Home() {
                                   maximumFractionDigits: 4,
                                 })}
                           </td>
-                          <td className="numeric mono">
-                            {displayMoney(item.averageCost, 2)}
+                          <td className="numeric mono cost-cell cost-breakdown-cell">
+                            <strong>{displayMoney(item.cost, 2)}</strong>
+                            <small>
+                              每股 {displayMoney(item.averageCost, 2)}
+                            </small>
                           </td>
-                          <td className="numeric mono cost-cell">
-                            {displayMoney(item.cost, 2)}
-                          </td>
-                          <td className="numeric mono net-cost-cell">
+                          <td className="numeric mono cost-breakdown-cell">
                             <strong
                               className={item.netCost <= 0 ? 'pos' : undefined}
                             >
@@ -4262,6 +4447,111 @@ export default function Home() {
                   <p className="industry-included-total">
                     已计入饼图：{displayMoney(displayedIndustryCost, 2)}
                   </p>
+                  <div className="nasdaq-exposure-card">
+                    <div className="nasdaq-exposure-head">
+                      <span>
+                        <small>NASDAQ-100 EXPOSURE</small>
+                        <strong>纳指敞口</strong>
+                      </span>
+                      <b>{nasdaqExposure.effectivePercent.toFixed(1)}%</b>
+                    </div>
+                    <div className="nasdaq-exposure-scale" aria-hidden="true">
+                      <div className="nasdaq-exposure-track">
+                        <i
+                          className={
+                            nasdaqExposure.effectivePercent < 0
+                              ? 'negative'
+                              : undefined
+                          }
+                          style={{
+                            left: `${nasdaqExposure.exposureBarLeft}%`,
+                            width: `${nasdaqExposure.exposureBarWidth}%`,
+                          }}
+                        />
+                        <b
+                          className="nasdaq-reference-line"
+                          style={{
+                            left: `${nasdaqExposure.referencePosition}%`,
+                          }}
+                        />
+                      </div>
+                      <div className="nasdaq-exposure-ticks">
+                        {nasdaqExposure.scaleTicks.map((tick) => (
+                          <span
+                            key={tick.value}
+                            style={{ left: `${tick.position}%` }}
+                          >
+                            {tick.value}%
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="nasdaq-exposure-metrics">
+                      <span>
+                        <small>相关成本占比</small>
+                        <strong>{nasdaqExposure.capitalPercent.toFixed(1)}%</strong>
+                      </span>
+                      <span>
+                        <small>净平均杠杆</small>
+                        <strong>
+                          {nasdaqExposure.netAverageLeverage.toFixed(2)}×
+                        </strong>
+                      </span>
+                      <span>
+                        <small>总平均杠杆</small>
+                        <strong>
+                          {nasdaqExposure.grossAverageLeverage.toFixed(2)}×
+                        </strong>
+                      </span>
+                      <span>
+                        <small>杠杆调整敞口</small>
+                        <strong>{displayMoney(nasdaqExposure.effective, 0)}</strong>
+                      </span>
+                    </div>
+                    <p className="nasdaq-leverage-note">
+                      净值计入多空抵消；总值按绝对杠杆计算
+                    </p>
+                    {nasdaqExposure.positions.length ? (
+                      <div className="nasdaq-product-allocation">
+                        <div className="nasdaq-product-head">
+                          <span>相关产品占比</span>
+                          <small>相关产品成本合计 = 100%</small>
+                        </div>
+                        <div className="nasdaq-product-bar">
+                          {nasdaqExposure.positions.map((item) => (
+                            <i
+                              key={item.symbol}
+                              title={`${item.symbol} ${item.sharePercent.toFixed(1)}%`}
+                              style={{
+                                width: `${item.sharePercent}%`,
+                                background: item.color,
+                              }}
+                            />
+                          ))}
+                        </div>
+                        <div className="nasdaq-product-list">
+                          {nasdaqExposure.positions.map((item) => (
+                            <div key={item.symbol}>
+                              <i style={{ background: item.color }} />
+                              <span>
+                                <b>{item.symbol}</b>
+                                <small>
+                                  {item.multiplier > 0 ? '+' : ''}
+                                  {item.multiplier}× · 组合占比{' '}
+                                  {item.portfolioPercent.toFixed(1)}%
+                                </small>
+                              </span>
+                              <strong>{item.sharePercent.toFixed(1)}%</strong>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="nasdaq-product-empty">
+                        当前持仓没有直接跟踪纳斯达克 100 的产品
+                      </div>
+                    )}
+                  </div>
                 </article>
                 <article>
                   <div className="mini-chart-head">
@@ -4269,13 +4559,13 @@ export default function Home() {
                       <span>标的集中度</span>
                       <strong>真实现金成本排行</strong>
                     </div>
-                    <small>显示 {holdingCostData.length} 项</small>
+                    <small>点圆点隐藏/显示</small>
                   </div>
                   <div className="structure-chart">
                     <div
                       className="cost-ranking-chart"
                       style={{
-                        height: Math.max(160, holdingCostData.length * 30),
+                        height: Math.max(160, displayedHoldingCostData.length * 30),
                       }}
                     >
                       <ResponsiveContainer
@@ -4284,9 +4574,9 @@ export default function Home() {
                         minWidth={0}
                       >
                         <BarChart
-                          data={holdingCostData}
+                          data={displayedHoldingCostData}
                           layout="vertical"
-                          margin={{ left: 0, right: 12, top: 8, bottom: 2 }}
+                          margin={{ left: 0, right: 44, top: 8, bottom: 2 }}
                         >
                           <XAxis type="number" hide />
                           <YAxis
@@ -4312,18 +4602,69 @@ export default function Home() {
                             isAnimationActive={false}
                             activeBar={false}
                           >
-                            {holdingCostData.map((item) => (
+                            {displayedHoldingCostData.map((item) => (
                               <Cell
                                 key={item.symbol}
                                 fill={item.color}
                                 stroke="none"
                               />
                             ))}
+                            <LabelList
+                              dataKey="pct"
+                              position="right"
+                              formatter={(v: unknown) => `${Number(v).toFixed(1)}%`}
+                              style={{
+                                fill: 'var(--foreground)',
+                                fontSize: 10,
+                                opacity: 0.7,
+                              }}
+                            />
                           </Bar>
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
                   </div>
+                  <div
+                    className="industry-filter-list"
+                    aria-label="标的显示控制"
+                  >
+                    {holdingCostData.map((item) => (
+                      <div
+                        key={item.symbol}
+                        className={
+                          excludedSymbols.has(item.symbol)
+                            ? 'excluded'
+                            : undefined
+                        }
+                      >
+                        <button
+                          className="industry-toggle"
+                          aria-label={`${excludedSymbols.has(item.symbol) ? '显示' : '隐藏'}${item.symbol}`}
+                          aria-pressed={!excludedSymbols.has(item.symbol)}
+                          onClick={() =>
+                            setExcludedSymbols((current) => {
+                              const next = new Set(current);
+                              if (next.has(item.symbol))
+                                next.delete(item.symbol);
+                              else next.add(item.symbol);
+                              return next;
+                            })
+                          }
+                        >
+                          <i style={{ background: item.color }} />
+                        </button>
+                        <span>{item.symbol}</span>
+                        <strong>
+                          {excludedSymbols.has(item.symbol)
+                            ? '已隐藏'
+                            : `${displayedHoldingCost ? ((item.cost / displayedHoldingCost) * 100).toFixed(1) : '0.0'}%`}
+                        </strong>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="industry-included-total">
+                    已计入排行：{displayMoney(displayedHoldingCost, 2)}
+                  </p>
                 </article>
               </div>
             </div>
@@ -4336,7 +4677,9 @@ export default function Home() {
             计入存储与内存。真实现金成本优先按每笔买入的实际交易金额分摊至每股，再按
             FIFO 扣除已卖出批次；它不包含 wash sale
             对税务成本的调增。交易金额缺失时，才使用成交价乘数量。 做 T
-            后净成本等于该标的全部买入实际支出减去全部卖出实际回款，再除以当前持仓数量得到每股净成本；它可能为负数，且不计入分红。
+            后净成本等于该标的全部买入实际支出减去全部卖出实际回款，再除以当前持仓数量得到每股净成本；它可能为负数，且不计入分红。纳指敞口仅统计直接跟踪纳斯达克
+            100 的产品，并以真实现金成本乘产品目标倍数估算，不等同于实时 Beta
+            或期权调整后的实际风险值。
             {holdings.incomplete
               ? ' 已检测到卖出数量超过已记录买入数量，请检查原始文件。'
               : ''}
@@ -4557,19 +4900,43 @@ export default function Home() {
               </strong>
               <small>卖出回款减匹配批次成本</small>
             </article>
-            <article>
-              <span>分红收入</span>
-              <strong className={cashReturns.dividends >= 0 ? 'pos' : 'neg'}>
-                {displayMoney(cashReturns.dividends, 2)}
-              </strong>
-              <small>自动识别含 Dividend 的流水</small>
-            </article>
-            <article>
-              <span>利息收入</span>
-              <strong className={cashReturns.interest >= 0 ? 'pos' : 'neg'}>
-                {displayMoney(cashReturns.interest, 2)}
-              </strong>
-              <small>自动识别含 Interest 的流水</small>
+            <article className="dividend-summary">
+              <div className="dividend-summary-main">
+                <div>
+                  <span>分红收入</span>
+                  <small>Dividend Income · 税后到账</small>
+                </div>
+                <strong className={netDividends >= 0 ? 'pos' : 'neg'}>
+                  {displayMoney(netDividends, 2)}
+                </strong>
+              </div>
+              <div className="dividend-tax-strip">
+                <span>
+                  <small>税前分红 · Gross</small>
+                  <b>{displayMoney(cashReturns.dividends, 2)}</b>
+                </span>
+                <span>
+                  <small>预扣税 · Withholding Tax</small>
+                  <b className={cashReturns.withholdingTax < 0 ? 'neg' : ''}>
+                    {displayMoney(cashReturns.withholdingTax, 2)}
+                  </b>
+                </span>
+              </div>
+              <div className="dividend-type-breakdown">
+                {dividendBreakdown.length ? (
+                  dividendBreakdown.map((item) => (
+                    <div key={item.label}>
+                      <span>
+                        <b>{item.label}</b>
+                        <small>{item.english}</small>
+                      </span>
+                      <strong>{displayMoney(item.value, 2)}</strong>
+                    </div>
+                  ))
+                ) : (
+                  <div className="dividend-empty">暂无分红流水</div>
+                )}
+              </div>
             </article>
             <article>
               <span>手续费</span>
@@ -4580,12 +4947,30 @@ export default function Home() {
             </article>
           </div>
           <p className="definition-note">
-            分红、利息尚未产生时显示为
-            $0.00；账户总盈亏已经包含这些现金收益。各项不强制相加，手续费可能已包含在成交金额及
+            分红与税务流水尚未产生时显示为
+            $0.00；账户总盈亏已经包含这些现金收益和税务扣减。分红类型及预扣税依据嘉信交易动作自动归类，不代表最终报税金额。各项不强制相加，手续费可能已包含在成交金额及
             FIFO 成本中。
+            {pnlReconciliationReady && (
+              <span
+                className="pnl-reconciliation-note"
+                title={`账户总盈亏减去浮动盈亏、FIFO 已实现盈亏及其他非交易现金流后的差额：${
+                  amountsMasked
+                    ? MASKED_VALUE
+                    : displayMoney(pnlReconciliationDifference, 2)
+                }`}
+              >
+                {Math.abs(pnlReconciliationDifference) <= 0.05
+                  ? '账目勾稽一致'
+                  : `勾稽差额 ${
+                      amountsMasked
+                        ? MASKED_VALUE
+                        : displayMoney(pnlReconciliationDifference, 2)
+                    }`}
+              </span>
+            )}
           </p>
         </section>
-        <section className="panel realized-panel">
+        <section className="panel realized-panel" id="realized-pnl">
           <div className="panel-head holdings-head">
             <div>
               <p>卖出交易复盘</p>
@@ -4623,7 +5008,7 @@ export default function Home() {
                   <small>按绝对盈亏排序</small>
                 </div>
                 <div className="realized-performance-list">
-                  {holdings.realizedPositions.slice(0, 8).map((item) => (
+                  {visibleRealizedPositions.map((item) => (
                     <div className="realized-performance-row" key={item.symbol}>
                       <div className="realized-performance-label">
                         <i
@@ -4671,7 +5056,7 @@ export default function Home() {
                     </tr>
                   </thead>
                   <tbody>
-                    {holdings.realizedPositions.map((item) => (
+                    {visibleRealizedPositions.map((item) => (
                       <tr key={item.symbol}>
                         <td>
                           <strong>{item.symbol}</strong>
@@ -4732,6 +5117,54 @@ export default function Home() {
             </div>
           ) : (
             <div className="empty-state">尚无可匹配的卖出交易</div>
+          )}
+          {holdings.realizedPositions.length > REALIZED_PAGE_SIZE && (
+            <div className="table-footer realized-pagination">
+              <span>
+                显示{' '}
+                {(currentRealizedPage - 1) * REALIZED_PAGE_SIZE + 1}—
+                {Math.min(
+                  currentRealizedPage * REALIZED_PAGE_SIZE,
+                  holdings.realizedPositions.length,
+                )}{' '}
+                / {holdings.realizedPositions.length} 个标的
+              </span>
+              <Pagination>
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious
+                      href="#realized-pnl"
+                      text="上一页"
+                      aria-disabled={currentRealizedPage <= 1}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        setRealizedPage((value) => Math.max(1, value - 1));
+                      }}
+                    />
+                  </PaginationItem>
+                  <PaginationItem>
+                    <span className="page-count">
+                      {currentRealizedPage} / {realizedTotalPages}
+                    </span>
+                  </PaginationItem>
+                  <PaginationItem>
+                    <PaginationNext
+                      href="#realized-pnl"
+                      text="下一页"
+                      aria-disabled={
+                        currentRealizedPage >= realizedTotalPages
+                      }
+                      onClick={(event) => {
+                        event.preventDefault();
+                        setRealizedPage((value) =>
+                          Math.min(realizedTotalPages, value + 1),
+                        );
+                      }}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            </div>
           )}
           <p className="definition-note">
             已实现现金盈亏使用实际卖出回款减去 FIFO
