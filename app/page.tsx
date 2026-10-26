@@ -92,6 +92,7 @@ import {
   THEME_COLORS,
   type IndustryTheme,
 } from '@/lib/industry-themes';
+import { CompoundSimulator } from '@/components/compound-simulator';
 import {
   Table,
   TableBody,
@@ -944,7 +945,9 @@ export default function Home() {
   const [canUndoTransaction, setCanUndoTransaction] = useState(false);
   const [error, setError] = useState('');
   const [theme, setTheme] = useState<'light' | 'dark' | 'glass'>('light');
-  const [activeView, setActiveView] = useState<'portfolio' | 'dca'>(
+  const [activeView, setActiveView] = useState<
+    'portfolio' | 'dca' | 'compound'
+  >(
     'portfolio',
   );
   const [todayKey, setTodayKey] = useState('1970-01-01');
@@ -2404,6 +2407,12 @@ export default function Home() {
             onClick={() => setActiveView('dca')}
           >
             定投计划
+          </button>
+          <button
+            className={activeView === 'compound' ? 'active' : ''}
+            onClick={() => setActiveView('compound')}
+          >
+            复利计算器
           </button>
         </nav>
         <div className="period">
@@ -4044,6 +4053,8 @@ export default function Home() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <CompoundSimulator active={activeView === 'compound'} />
 
       <section
         className={`content ${activeView === 'portfolio' ? '' : 'view-hidden'}`}
